@@ -59,7 +59,6 @@ class Interpreter(InterpreterBase):
         
         for func in funcs:
             assert(func.elem_type == InterpreterBase.FUNC_NODE)
-            
             self.main_scope.functions[func.get("name")] = Function(self, func)
         
 class Scope():
@@ -68,6 +67,8 @@ class Scope():
     '''
     def __init__(self, interpreter: Interpreter, parent: Optional['Scope']=None):
         self.interpreter = interpreter
+        if not isinstance(interpreter, Interpreter):
+            raise Exception("Scope must be initialized with an Interpreter object")
         
         self.variables: Dict[str, Variable] = {}
         self.functions: Dict[str, Function] = {}
@@ -98,6 +99,20 @@ class Scope():
             return True
         if recursive and self.parent:
             return self.parent.check_variable(name, recursive)
+        
+    def check_function(self, name, recursive=False):
+        if name in self.functions:
+            return True
+        if recursive and self.parent:
+            return self.parent.check_function(name, recursive)
+    
+    def get_function(self, name):
+        if name in self.functions:
+            return self.functions[name]
+        elif self.parent:
+            return self.parent.get_function(name)
+        else:
+            self.interpreter.error(ErrorType.NAME_ERROR, f"Function {name} not found")
 
 class Variable():
     '''
@@ -153,11 +168,12 @@ class PrintFunction(Function):
             # if arg is a value just put the literal into values
             elif arg.elem_type in Interpreter.VAL_NODES:
                 # check if the elem_type belongs to the value types
-                values.append(arg.get("value"))
+                values.append(arg.get("val"))
             else:
                 # raise error if the arg is not a variable or value
                 self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid argument type {arg.elem_type}")
-        super().output(values)
+        output_string = "".join([str(val) for val in values])
+        self.interpreter.output(output_string)
         
 class InputFunction(Function):
     """
@@ -194,7 +210,7 @@ class FunctionCall():
         self.args = args
         self.function = function
         self.calling_scope = calling_scope
-        self.scope = Scope(calling_scope)
+        self.scope = Scope(interpreter=self.interpreter, parent=self.calling_scope)
         
     def run(self):
         # execute list of statement nodes in function node
@@ -218,12 +234,20 @@ class FunctionCall():
                 self.evaluate_fcall(statement)
             case _:
                 raise Exception(f"Invalid statement {statement.elem_type}")            
+    
+    def evaluate_fcall(self, fcall: Element):
+        # get function from scope
+        function = self.scope.get_function(fcall.get("name"))
         
+        # execute function
+        function.execute(self.scope, fcall.get("args"))
+        
+    
     def evaluate_expression(self, expression: Element):
         match (expression.elem_type):
             # if this is a value node just return value
             case e_t if e_t in Interpreter.VAL_NODES:
-                return expression.get("value")
+                return expression.get("val")
             # if this is var node try to retrieve from scope
             case InterpreterBase.VAR_NODE:
                 return self.scope.get_variable(expression.get("name"))
@@ -243,12 +267,12 @@ class FunctionCall():
                 # check that these are both ints
                 if type(left) != int or type(right) != int:
                     self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid types for addition {type(left)} and {type(right)}")                
-                return self.evaluate_expression(left) + self.evaluate_expression(right)
+                return left + right
             case Interpreter.SUB_NODE:
                 # check that these are both ints
                 if type(left) != int or type(right) != int:
                     self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid types for subtraction {type(left)} and {type(right)}")    
-                return self.evaluate_expression(left) - self.evaluate_expression(right)
+                return left - right
             case _:
                 # This should never happen, binary op is only called on operators belonging to BINARY_OP_NODES
                 raise Exception(f"Invalid binary operator {binary_op.elem_type}")
