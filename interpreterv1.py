@@ -323,3 +323,21 @@ class PrintFunctionCall(FunctionCall):
         # print the values
         output_string = "".join([str(val) for val in values])
         self.interpreter.output(output_string)
+        
+        
+
+# ===================================== MAIN Testing =====================================
+# def main():
+#     program_source = """func main() {
+#         var x;
+#         x = 5 + inputi("Hello, World!");
+#         print("The sum is: ", x);
+#     }
+#     """
+    
+#     interpreter = Interpreter()
+    
+#     interpreter.run(program_source)
+    
+# if __name__ == "__main__":
+#     main()

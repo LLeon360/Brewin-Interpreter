@@ -1,4 +1,4 @@
-# CS 131 Fall 2024: Project Starter
+# CS 131 Fall 2024: Project Starter README
 
 Hey there! This is a template repository that contains the necessary boilerplate for [CS 131](https://ucla-cs-131.github.io/fall-24-website/)'s quarter-long project: making an interpreter. The project specs are as follows:
 
