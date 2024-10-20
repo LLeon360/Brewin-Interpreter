@@ -47,6 +47,10 @@ class Interpreter(InterpreterBase):
         # add functions under program node to scope
         self.setup_main_scope(program_node.get("functions"))
         
+        # check that main is defined
+        if not self.main_scope.check_function("main"):
+            super().error(ErrorType.NAME_ERROR, "No main() function was found")
+            
         # call the main function
         self.main_scope.functions["main"].execute(self.main_scope, [])
         
@@ -182,8 +186,6 @@ class InputFunction(Function):
         self.name = "inputi"
         self.statements = None
         
-        self.get_input = interpreter.get_input
-        
         self.returns_value = True
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
@@ -299,7 +301,7 @@ class InputFunctionCall(FunctionCall):
     def run(self):
         # accept up to one argument
         if len(self.args) > 1:
-            self.interpreter.error(ErrorType.TYPE_ERROR, f"Function {self.name} only accepts one argument")
+            self.interpreter.error(ErrorType.NAME_ERROR, f"No inputi() function found that takes > 1 parameter")
         
         # if there is an argument, print it
         if self.args:
@@ -327,17 +329,16 @@ class PrintFunctionCall(FunctionCall):
         
 
 # ===================================== MAIN Testing =====================================
-# def main():
-#     program_source = """func main() {
-#         var x;
-#         x = 5 + inputi("Hello, World!");
-#         print("The sum is: ", x);
-#     }
-#     """
+def main():
+    program_source = """func main() {
+        inputi("hhiahfdiahsfi");
+        inputi("hhiahfdiahsfi");
+    }
+    """
     
-#     interpreter = Interpreter()
+    interpreter = Interpreter()
     
-#     interpreter.run(program_source)
+    interpreter.run(program_source)
     
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()
