@@ -168,20 +168,7 @@ class PrintFunction(Function):
         self.returns_value = False
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
-        values = []
-        for arg in args:
-            # if arg is a variable, get the value from the scope
-            if arg.elem_type == InterpreterBase.VAR_NODE:
-                values.append(calling_scope.get_variable(arg.get("name")))   
-            # if arg is a value just put the literal into values
-            elif arg.elem_type in Interpreter.VAL_NODES:
-                # check if the elem_type belongs to the value types
-                values.append(arg.get("val"))
-            else:
-                # raise error if the arg is not a variable or value
-                self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid argument type {arg.elem_type}")
-        output_string = "".join([str(val) for val in values])
-        self.interpreter.output(output_string)
+        PrintFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
         
 class InputFunction(Function):
     """
@@ -200,9 +187,8 @@ class InputFunction(Function):
         self.returns_value = True
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
-        input_value = self.interpreter.get_input()
-        return input_value
-    
+        return InputFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
+
 class FunctionCall():
     '''
     Represents the stack frame for a function call
@@ -218,7 +204,7 @@ class FunctionCall():
         self.interpreter = interpreter
         
         self.name = name
-        self.args = args
+        self.args = args        
         self.function = function
         self.calling_scope = calling_scope
         self.scope = Scope(interpreter=self.interpreter, parent=self.calling_scope)
@@ -303,13 +289,48 @@ class FunctionCall():
         except:
             self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {callable_type} but got {type(value)} of value {value}")
 
+class InputFunctionCall(FunctionCall):
+    '''
+    Represents a function call to the built-in input function
+    '''
+    def __init__(self, interpreter: Interpreter, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
+        super().__init__(interpreter, name, function, args, calling_scope)
+        
+    def run(self):
+        # accept up to one argument
+        if len(self.args) > 1:
+            self.interpreter.error(ErrorType.TYPE_ERROR, f"Function {self.name} only accepts one argument")
+        
+        # if there is an argument, print it
+        if self.args:
+            prompt = self.evaluate_expression(self.args[0])
+            self.interpreter.output(prompt)
+        
+        input_value = self.interpreter.get_input()
+        return input_value    
+    
+class PrintFunctionCall(FunctionCall):
+    '''
+    Represents a function call to the built-in print function
+    '''
+    def __init__(self, interpreter: Interpreter, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
+        super().__init__(interpreter, name, function, args, calling_scope)
+        
+    def run(self):
+        # evaluate the arguments
+        values = [self.evaluate_expression(arg) for arg in self.args]
+        
+        # print the values
+        output_string = "".join([str(val) for val in values])
+        self.interpreter.output(output_string)
+
 # ===================================== MAIN Testing =====================================
 def main():
     # all programs will be provided to your interpreter as a python string, 
     # just as shown here.
     program_source = """func main() {
         var x;
-        x = 5 + inputi("Hello, World!");
+        x = 5 + inputi(10 + 10 + 15 - (1-1000));
         print("The sum is: ", x);
     }
     """
