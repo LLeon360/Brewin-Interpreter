@@ -1,3 +1,11 @@
+# Brewin InterpreterV1
+
+This interpreter was written to interpret the main() function of a simple Brewin program and supports variables, rudementary function calling, statements, and expressions.
+
+The interpreter is written modularly with future expansion in mind so there is a skeleton of support for features like scoping, other function defintions (besides main), argument passing, etc.
+
+There are situations in which the interpreter will raise Exceptions not through the `intbase.py` error() function because those Exceptions would not be semantic errors but instead something gone wrong within the interpreter's control flow, ex. calling the evaluate_expression on an Element that does not fit into any possible expression category and thus falls through all pattern matching. This should never happen because evaluate_expression is only called when an expression should be there either syntactically (in which case the parser should catch it) or because the program already checked that it was an expression. 
+
 # CS 131 Fall 2024: Project Starter README
 
 Hey there! This is a template repository that contains the necessary boilerplate for [CS 131](https://ucla-cs-131.github.io/fall-24-website/)'s quarter-long project: making an interpreter. The project specs are as follows:
