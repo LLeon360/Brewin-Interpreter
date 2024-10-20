@@ -323,23 +323,3 @@ class PrintFunctionCall(FunctionCall):
         # print the values
         output_string = "".join([str(val) for val in values])
         self.interpreter.output(output_string)
-
-# ===================================== MAIN Testing =====================================
-def main():
-    # all programs will be provided to your interpreter as a python string, 
-    # just as shown here.
-    program_source = """func main() {
-        var x;
-        x = 5 + inputi(10 + 10 + 15 - (1-1000));
-        print("The sum is: ", x);
-    }
-    """
-    
-    # create an instance of your interpreter
-    interpreter = Interpreter()
-    
-    # run the interpreter
-    interpreter.run(program_source)
-    
-if __name__ == "__main__":
-    main()
