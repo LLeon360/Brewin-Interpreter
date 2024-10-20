@@ -55,7 +55,7 @@ class Interpreter(InterpreterBase):
         Add built-in functions to the main scope
         """
         self.main_scope.functions["print"] = PrintFunction(self)
-        self.main_scope.functions["input"] = InputFunction(self)
+        self.main_scope.functions["inputi"] = InputFunction(self)
         
         for func in funcs:
             assert(func.elem_type == InterpreterBase.FUNC_NODE)
@@ -75,7 +75,11 @@ class Scope():
         
         self.parent = parent
         
-    def add_variable(self, name):
+    def declare_variable(self, name):
+        # check if was already declared
+        if self.check_variable(name, recursive=False):
+            self.interpreter.error(ErrorType.NAME_ERROR, f"Variable {name} defined more than once")
+        
         self.variables[name] = Variable(interpreter=self.interpreter)
         
     def assign_variables(self, name, value):
@@ -84,7 +88,7 @@ class Scope():
         elif self.parent:
             self.parent.assign_variables(name, value)
         else:
-            self.interpreter.error(ErrorType.NAME_ERROR, f"Variable {name} not found")
+            self.interpreter.error(ErrorType.NAME_ERROR, f"Variable {name} has not been defined")
             
     def get_variable(self, name):
         if self.check_variable(name):
@@ -92,7 +96,7 @@ class Scope():
         elif self.parent:
             return self.parent.get_variable(name)
         else:
-            self.interpreter.error(ErrorType.NAME_ERROR, f"Variable {name} not found")
+            self.interpreter.error(ErrorType.NAME_ERROR, f"Variable {name} has not been defined",)
         
     def check_variable(self, name, recursive=False):
         if name in self.variables:
@@ -112,7 +116,7 @@ class Scope():
         elif self.parent:
             return self.parent.get_function(name)
         else:
-            self.interpreter.error(ErrorType.NAME_ERROR, f"Function {name} not found")
+            self.interpreter.error(ErrorType.NAME_ERROR, f"Function {name} has not been defined")
 
 class Variable():
     '''
@@ -143,6 +147,8 @@ class Function():
         self.name = function_node.get("name")
         self.statements = function_node.get("statements")
         
+        self.returns_value = False
+        
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Any]]=None):
         fcall = FunctionCall(self.interpreter, self.name, self, args, calling_scope)
         fcall.run()
@@ -158,6 +164,8 @@ class PrintFunction(Function):
         self.function_node = None
         self.name = "print"
         self.statements = None
+        
+        self.returns_value = False
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         values = []
@@ -181,16 +189,19 @@ class InputFunction(Function):
     Overwrites the execute so no need to implement this in the AST format
     """
     def __init__(self, interpreter: Interpreter):
-        self.Interpreter = interpreter
+        self.interpreter = interpreter
         
         self.function_node = None
         self.name = "inputi"
         self.statements = None
         
         self.get_input = interpreter.get_input
+        
+        self.returns_value = True
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
-        return self.get_input()
+        input_value = self.interpreter.get_input()
+        return input_value
     
 class FunctionCall():
     '''
@@ -225,7 +236,7 @@ class FunctionCall():
         match (statement.elem_type):
             case InterpreterBase.VAR_DEF_NODE:
                 # add the variable to the scope
-                self.scope.add_variable(statement.get("name"))
+                self.scope.declare_variable(statement.get("name"))
             case Interpreter.ASSIGN_NODE:
                 # assign the variable
                 self.scope.assign_variables(statement.get("name"), self.evaluate_expression(statement.get("expression")))
@@ -240,8 +251,7 @@ class FunctionCall():
         function = self.scope.get_function(fcall.get("name"))
         
         # execute function
-        function.execute(self.scope, fcall.get("args"))
-        
+        return function.execute(self.scope, fcall.get("args"))
     
     def evaluate_expression(self, expression: Element):
         match (expression.elem_type):
@@ -254,7 +264,14 @@ class FunctionCall():
             case e_t if e_t in Interpreter.BINARY_OP_NODES:
                 return self.evaluate_binary_op(expression)
             case InterpreterBase.FCALL_NODE:
-                return self.evaluate_fcall(expression)
+                fname = expression.get("name")
+                # Make sure that function call returns something
+                if not self.scope.get_function(fname).returns_value:
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Function {fname} does not return a value")
+                
+                value = self.evaluate_fcall(expression)
+                
+                return value
             case _:
                 raise Exception(f"Invalid expression {expression.elem_type}")
         
@@ -264,19 +281,27 @@ class FunctionCall():
         
         match (binary_op.elem_type):
             case Interpreter.ADD_NODE:
-                # check that these are both ints
-                if type(left) != int or type(right) != int:
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid types for addition {type(left)} and {type(right)}")                
+                # try casting both to ints
+                left = self.cast_value(left, int)
+                right = self.cast_value(right, int)
+                
                 return left + right
             case Interpreter.SUB_NODE:
-                # check that these are both ints
-                if type(left) != int or type(right) != int:
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid types for subtraction {type(left)} and {type(right)}")    
+                # try casting both to ints
+                left = self.cast_value(left, int)
+                right = self.cast_value(right, int)
+                
                 return left - right
             case _:
                 # This should never happen, binary op is only called on operators belonging to BINARY_OP_NODES
                 raise Exception(f"Invalid binary operator {binary_op.elem_type}")
-        
+    
+    def cast_value(self, value: Any, callable_type: type):
+        try:
+            value = callable_type(value)
+            return value
+        except:
+            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {callable_type} but got {type(value)} of value {value}")
 
 # ===================================== MAIN Testing =====================================
 def main():
@@ -284,7 +309,7 @@ def main():
     # just as shown here.
     program_source = """func main() {
         var x;
-        x = 5 + 6;
+        x = 5 + inputi("Hello, World!");
         print("The sum is: ", x);
     }
     """
