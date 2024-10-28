@@ -329,16 +329,17 @@ class PrintFunctionCall(FunctionCall):
         
 
 # ===================================== MAIN Testing =====================================
-def main():
-    program_source = """func main() {
-        inputi("hhiahfdiahsfi");
-        inputi("hhiahfdiahsfi");
-    }
-    """
+# def main():
+#     program_source = """func main() {
+#         var bar;
+#         bar = 5;
+#         print("The answer is: ", (10 + bar) - 6, "!");
+#     }
+#     """
     
-    interpreter = Interpreter()
+#     interpreter = Interpreter()
     
-    interpreter.run(program_source)
+#     interpreter.run(program_source)
     
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()

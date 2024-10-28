@@ -1,5 +1,6 @@
 # Brewin InterpreterV1
 
+General:
 This interpreter was written to interpret the main() function of a simple Brewin program and supports variables, rudementary function calling, statements, and expressions.
 
 The interpreter is written modularly with future expansion in mind so there is a skeleton of support for features like scoping, other function defintions (besides main), argument passing, etc.
