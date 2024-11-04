@@ -36,7 +36,7 @@ class Interpreter(InterpreterBase):
     OR_NODE = "||"    
     
     # add Binary operators for expressions
-    BINARY_OP_NODES = [ADD_NODE, SUB_NODE, MULTIPLY_NODE, DIVIDE_NODE, EQUALS_NODE, NOT_EQUALS_NODE, GREATER_THAN_NODE, LESS_THAN_NODE, GREATER_THAN_EQ_NODE, LESS_THAN_EQ_NODE]
+    BINARY_OP_NODES = [ADD_NODE, SUB_NODE, MULTIPLY_NODE, DIVIDE_NODE, EQUALS_NODE, NOT_EQUALS_NODE, GREATER_THAN_NODE, LESS_THAN_NODE, GREATER_THAN_EQ_NODE, LESS_THAN_EQ_NODE, AND_NODE, OR_NODE]
     
     # Unary operators
     UNARY_OP_NODES = [InterpreterBase.NEG_NODE, InterpreterBase.NOT_NODE]
@@ -48,7 +48,7 @@ class Interpreter(InterpreterBase):
     VAL_NODES = [InterpreterBase.INT_NODE, InterpreterBase.STRING_NODE, InterpreterBase.BOOL_NODE, InterpreterBase.NIL_NODE]
     
     # add statement node types (variable definition, assignment, function call)
-    STATEMENT_NODES = [InterpreterBase.VAR_DEF_NODE, ASSIGN_NODE, InterpreterBase.FCALL_NODE]
+    STATEMENT_NODES = [InterpreterBase.VAR_DEF_NODE, ASSIGN_NODE, InterpreterBase.FCALL_NODE, InterpreterBase.IF_NODE, InterpreterBase.FOR_NODE]
     
     # nil 
     NIL = None
@@ -60,7 +60,7 @@ class Interpreter(InterpreterBase):
         super().__init__(console_output, inp) 
         
         self.global_scope = Scope(interpreter=self)
-        
+        trace_output = True
         self.trace_output = trace_output
         
     def run(self, program: str):
@@ -73,26 +73,26 @@ class Interpreter(InterpreterBase):
         self.setup_global_scope(program_node.get("functions"))
         
         # check that main is defined
-        if not self.global_scope.check_function("main"):
+        if not self.global_scope.check_function("main", 0):
             super().error(ErrorType.NAME_ERROR, "No main() function was found")
             
         # call the main function
-        self.global_scope.functions["main"].execute(self.global_scope, [])
+        self.global_scope.functions.functions[("main", 0)].execute(self.global_scope, [])
         
     def setup_global_scope(self, funcs: List[Element]):
         """
         Add built-in functions to the main scope
         """
         
-        self.global_scope.functions[("print", Interpreter.VAR_ARGS)] = PrintFunction(self)
+        self.global_scope.functions.functions[("print", Interpreter.VAR_ARGS)] = PrintFunction(self)
         
         # the inputi funciton handles 0 or 1 arguments
-        self.global_scope.functions[("inputi", 0)] = InputIFunction(self)
-        self.global_scope.functions[("inputi", 1)] = InputIFunction(self)
+        self.global_scope.functions.functions[("inputi", 0)] = InputIFunction(self)
+        self.global_scope.functions.functions[("inputi", 1)] = InputIFunction(self)
         
         # the inputs funciton handles 0 or 1 arguments
-        self.global_scope.functions[("inputs", 0)] = InputSFunction(self)
-        self.global_scope.functions[("inputs", 1)] = InputSFunction(self)
+        self.global_scope.functions.functions[("inputs", 0)] = InputSFunction(self)
+        self.global_scope.functions.functions[("inputs", 1)] = InputSFunction(self)
         
         for func in funcs:
             assert(func.elem_type == InterpreterBase.FUNC_NODE)
@@ -140,8 +140,9 @@ class Function():
         self.statements = function_node.get("statements")
         
     def execute(self, calling_scope: Optional['Scope'], args: Optional[List[Any]]=None):
+        # args are being passed by value here
         fcall = FunctionCall(self.interpreter, self.name, self, args, calling_scope)
-        fcall.run()
+        return fcall.run()
 
 class FunctionScope():
     '''
@@ -158,7 +159,7 @@ class FunctionScope():
         
         self.parent = parent
         
-    def check_function(self, name, argc, recursive=False):
+    def check_function(self, name: str, argc: int, recursive=False):
         if (name, argc) in self.functions:
             return True
         if (name, Interpreter.VAR_ARGS) in self.functions:
@@ -166,7 +167,7 @@ class FunctionScope():
         if recursive and self.parent:
             return self.parent.check_function(name, argc, recursive)
     
-    def get_function(self, name, argc=0):
+    def get_function(self, name: str, argc: int=0):
         if (name, argc) in self.functions:
             return self.functions[(name, argc)]
         elif self.parent:
@@ -178,12 +179,14 @@ class FunctionScope():
             
             self.interpreter.error(ErrorType.NAME_ERROR, f"Function {name} with {argc} args has not been defined")
             
-    def add_function(self, function, var_args=False):
+    def add_function(self, function: Element, var_args=False):
+        function_name = function.get("name")
+        function_args = function.get("args")
         if var_args:
-            self.functions[(function.name, Interpreter.VAR_ARGS)] = Function(self.interpreter, function)
+            self.functions[(function_name, Interpreter.VAR_ARGS)] = Function(self.interpreter, function)
         else:
             # functions are uniquely identified by name and number of arguments
-            self.functions[(function.name, len(function.args))] = Function(self.interpreter, function)
+            self.functions[(function_name, len(function_args))] = Function(self.interpreter, function)
 
 class VariableScope():
     '''
@@ -240,8 +243,8 @@ class Scope():
     def __init__(self, interpreter: Interpreter, variables: Optional['VariableScope']=None, functions: Optional['FunctionScope']=None):
         self.interpreter = interpreter
         
-        self.variables = variables or self.interpreter.global_scope.variables # If None provided, use global scope
-        self.functions = functions or FunctionScope(interpreter=self.interpreter)
+        self.variables = VariableScope(interpreter=self.interpreter, parent=variables)
+        self.functions = FunctionScope(interpreter=self.interpreter, parent=functions)
         
     def declare_variable(self, name):
         self.variables.declare_variable(name)
@@ -250,19 +253,19 @@ class Scope():
         self.variables.assign_variable(name, value)
         
     def get_variable(self, name):
-        self.variables.get_variable(name)
+        return self.variables.get_variable(name)
     
     def check_variable(self, name):
         return self.variables.check_variable(name)
 
-    def check_function(self, name):
-        return self.functions.check_function(name)
+    def check_function(self, name, argc):
+        return self.functions.check_function(name, argc)
     
     def get_function(self, name, argc=0): # TODO reconsider default value for argc
         return self.functions.get_function(name, argc=argc)
     
-    def assign_function(self, name, function):
-        self.functions.functions[name] = function
+    def add_function(self, function: Element):
+        self.functions.add_function(function)
 
 class PrintFunction(Function):
     '''
@@ -275,6 +278,7 @@ class PrintFunction(Function):
         self.function_node = None
         self.name = "print"
         self.statements = None
+        self.args = [] # no named args
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         PrintFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
@@ -291,6 +295,7 @@ class InputIFunction(Function):
         self.function_node = None
         self.name = "inputi"
         self.statements = None
+        self.args = [] # no named args
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         return InputIFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
@@ -307,6 +312,7 @@ class InputSFunction(Function):
         self.function_node = None
         self.name = "inputs"
         self.statements = None
+        self.args = [] # no named args
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         return InputSFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
@@ -319,10 +325,15 @@ class CodeBlock():
     
     Must propagate return statements to the outer fcall 
     '''
+    interpreter: Interpreter
+    fcall: 'FunctionCall'
+    statements: List[Element]
+    calling_scope: Scope
     def __init__(self, interpreter: Interpreter, fcall: 'FunctionCall', statements: List[Element], calling_scope: Scope):
         self.interpreter = interpreter
         
         self.fcall = fcall
+        self.statements = statements
         self.calling_scope = calling_scope
         
         self.scope = Scope(interpreter=self.interpreter, variables=calling_scope.variables, functions=calling_scope.functions)
@@ -331,7 +342,12 @@ class CodeBlock():
         # execute list of statement nodes given
         for statement in self.statements:
             if statement.elem_type == InterpreterBase.RETURN_NODE:
-                self.fcall.return_value = self.evaluate_expression(statement.get("expression"))
+                if statement.get("expression"):
+                    print("returning value ")
+                    self.fcall.return_value = self.evaluate_expression(statement.get("expression"))
+                    print(f"return value: {self.fcall.return_value}")
+                else:
+                    self.fcall.return_value = Interpreter.NIL
                 self.fcall.hit_return = True
                 break
             else:
@@ -347,19 +363,21 @@ class CodeBlock():
         # execute the initialization statement
         self.evaluate_statement(init_statement)
         
-        def eval_condition(condition: Element):
-            value = self.evaluate_expression(condition)
-            self.assert_bool(value)
-            return value
-        
-        while eval_condition(condition):
-            self.run()
+        while self.evaluate_condition(condition):
+            # each body of the loop needs it's own scope, so another CodeBlock
+            loop_body = CodeBlock(self.interpreter, self.fcall, self.statements, self.scope)
+            loop_body.run()
             
             if self.fcall.hit_return:
                 return self.fcall.return_value
             
             # execute the update statement
             self.evaluate_statement(update_statement)        
+        
+    def evaluate_condition(self, condition: Element):
+        value = self.evaluate_expression(condition)
+        self.assert_bool(value)
+        return value
     
     def evaluate_statement(self, statement: Element):
         # Check that statement is a valid statement
@@ -377,15 +395,17 @@ class CodeBlock():
                 self.evaluate_fcall(statement)
             case InterpreterBase.IF_NODE:
                 # evaluate the condition
-                condition = self.evaluate_expression(statement.get("condition"))
+                condition = self.evaluate_condition(statement.get("condition"))
                     
                 # if the condition is true, execute the code block, if not execute the else block (if exists)
                 if condition:
                     code_block = CodeBlock(self.interpreter, self.fcall, statement.get("statements"), self.scope)
                     code_block.run()
-                elif statement.get("else"):                    
-                    code_block = CodeBlock(self.interpreter, self.fcall, statement.get("else"), self.scope)
+                    print("IF BLOCK EXITED WITH " + str(self.fcall.return_value))
+                elif statement.get("else_statements"):                    
+                    code_block = CodeBlock(self.interpreter, self.fcall, statement.get("else_statements"), self.scope)
                     code_block.run()
+                    print("ELSE BLOCK EXITED WITH " + str(self.fcall.return_value))
             case InterpreterBase.FOR_NODE:
                 init_statement = statement.get("init")
                 condition = statement.get("condition")
@@ -403,16 +423,21 @@ class CodeBlock():
         # get function from scope
         function = self.scope.get_function(func_name, argc)
         
+        # evaluate all arguments into values
+        arg_values = [self.evaluate_expression(arg) for arg in fcall.get("args")]
+        
         # execute function
-        return function.execute(self.scope, fcall.get("args"))
+        print(f"CALLING FUNCTION {func_name} WITH ARGS {arg_values}")
+        return function.execute(self.scope, arg_values)
     
-    def evaluate_expression(self, expression: Element):
+    def evaluate_expression(self, expression: Element):   
+        
         match (expression.elem_type):
             # if this is a value node just return value
             case e_t if e_t in Interpreter.VAL_NODES:
                 
-                if self.interpreter.trace_output:
-                    self.interpreter.output(f"Value node: {expression.get('val')} of type {expression.elem_type}")
+                # if self.interpreter.trace_output:
+                #     print(f"Value node: {expression.get('val')} of type {expression.elem_type}")
                     
                 return expression.get("val")
             # if this is var node try to retrieve from scope
@@ -424,9 +449,9 @@ class CodeBlock():
                 return self.evaluate_unary_op(expression)
             case InterpreterBase.FCALL_NODE:
                 fname = expression.get("name")
-                
+                print("EVALUATING FUNCTION CALL " + fname)
                 value = self.evaluate_fcall(expression)
-                
+                print(f"FINISHED EVALUATING FUNCTION CALL {fname} WITH VALUE {value}")
                 return value
             case _:
                 raise Exception(f"Invalid expression {expression.elem_type}")
@@ -478,35 +503,39 @@ class CodeBlock():
             # comparisons
             case Interpreter.EQUALS_NODE:
                 # allows different types
+                if type(left) != type(right):
+                    return False
+                
                 return left == right
             case Interpreter.NOT_EQUALS_NODE:
-                # assert same type
+                # allows different types
                 if type(left) != type(right):
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                    return True
+                
                 return left != right
             
             case Interpreter.GREATER_THAN_NODE:
                 # assert same type
                 if type(left) != type(right):
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)} for {left} > {right}")
                 
                 return left > right
             case Interpreter.LESS_THAN_NODE:
                 # assert same type
                 if type(left) != type(right):
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)} for {left} < {right}")
                 
                 return left < right
             case Interpreter.GREATER_THAN_EQ_NODE:
                 # assert same type
                 if type(left) != type(right):
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)} for {left} >= {right}")
                 
                 return left >= right
             case Interpreter.LESS_THAN_EQ_NODE:
                 # assert same type
                 if type(left) != type(right):
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)} for {left} <= {right}")
                 
                 return left <= right
             
@@ -575,7 +604,7 @@ class FunctionCall():
         self.args = args        
         self.function = function
         self.calling_scope = calling_scope
-        self.scope = Scope(interpreter=self.interpreter, variables=None, functions=calling_scope.functions) 
+        self.scope = Scope(interpreter=self.interpreter, variables=self.interpreter.global_scope, functions=calling_scope.functions) 
 
         # keep track of if a return statement was hit, especially in nested code blocks
         self.hit_return = False
@@ -584,9 +613,10 @@ class FunctionCall():
         
         # add arguments to scope as variables, map each argument to the corresponding argument node's name
         # with variable arguments such as print, there will be no arg nodes, so it's still possible to access the arguments by index
-        for arg, arg_node in zip(args, function.args):
-            self.scope.declare_variable(arg_node.get("name"))
-            self.scope.assign_variable(arg_node.get("name"), arg)
+        for arg_value, arg_node in zip(args, function.args):
+            arg_name = arg_node.get("name")
+            self.scope.declare_variable(arg_name)
+            self.scope.assign_variable(arg_name, arg_value)
         
     def run(self):
         # execute list of statement nodes in function node
@@ -594,6 +624,8 @@ class FunctionCall():
         # create a CodeBlock for the main statement body
         code_block = CodeBlock(self.interpreter, self, self.function.statements, self.scope)
         code_block.run()
+        
+        print(f"EXITING FUNCTION BLOCK {self.name} WITH " + str(self.return_value))
         
         return self.return_value
         
@@ -611,7 +643,7 @@ class InputIFunctionCall(FunctionCall):
         
         # if there is an argument, print it
         if self.args:
-            prompt = self.evaluate_expression(self.args[0])
+            prompt = self.args[0]
             self.interpreter.output(prompt)
         
         input_value = self.interpreter.get_input()
@@ -634,9 +666,12 @@ class InputSFunctionCall(FunctionCall):
         if len(self.args) > 1:
             self.interpreter.error(ErrorType.NAME_ERROR, f"No inputs() function found that takes > 1 parameter")
         
+        # Make a code block just to evaluate expressions
+        code_block = CodeBlock(self.interpreter, self, self.function.statements, self.scope)
+        
         # if there is an argument, print it
         if self.args:
-            prompt = self.evaluate_expression(self.args[0])
+            prompt = self.args[0]
             self.interpreter.output(prompt)
         
         input_value = self.interpreter.get_input()
@@ -650,8 +685,7 @@ class PrintFunctionCall(FunctionCall):
         super().__init__(interpreter, name, function, args, calling_scope)
         
     def run(self):
-        # evaluate the arguments
-        values = [self.evaluate_expression(arg) for arg in self.args]
+        values = self.args
         
         for i, val in enumerate(values):
             # replace bools with strings
