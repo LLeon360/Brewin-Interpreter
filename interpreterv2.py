@@ -2,7 +2,7 @@ from intbase import InterpreterBase, ErrorType
 from brewparse import parse_program
 from element import Element
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 class Interpreter(InterpreterBase):
     """
@@ -34,6 +34,12 @@ class Interpreter(InterpreterBase):
     # add statement node types (variable definition, assignment, function call)
     STATEMENT_NODES = [InterpreterBase.VAR_DEF_NODE, ASSIGN_NODE, InterpreterBase.FCALL_NODE]
     
+    # nil 
+    NIL = None
+    
+    # variable number of arguments
+    VAR_ARGS = -1
+    
     def __init__(self, console_output=True, inp=None, trace_output=False):
         super().__init__(console_output, inp) 
         
@@ -59,12 +65,16 @@ class Interpreter(InterpreterBase):
         """
         Add built-in functions to the main scope
         """
-        self.global_scope.functions["print"] = PrintFunction(self)
-        self.global_scope.functions["inputi"] = InputFunction(self)
+        
+        self.global_scope.functions[("print", Interpreter.VAR_ARGS)] = PrintFunction(self)
+        
+        # the inputi funciton handles 0 or 1 arguments
+        self.global_scope.functions[("inputi", 0)] = InputFunction(self)
+        self.global_scope.functions[("inputi", 1)] = InputFunction(self)
         
         for func in funcs:
             assert(func.elem_type == InterpreterBase.FUNC_NODE)
-            self.global_scope.functions[func.get("name")] = Function(self, func)
+            self.global_scope.add_function(func)
     
 class Variable():
     '''
@@ -90,6 +100,11 @@ class Function():
     interpreter: Interpreter
     function_node: Element
     
+    name: str
+    args: List[Element] # list of argument nodes
+    statements: List[Element] # list of statement nodes
+    
+    
     def __init__(self, interpreter: Interpreter, function_node: Element):
         self.interpreter = interpreter
         
@@ -99,9 +114,8 @@ class Function():
         assert(function_node.elem_type == InterpreterBase.FUNC_NODE)
         
         self.name = function_node.get("name")
+        self.args = function_node.get("args")
         self.statements = function_node.get("statements")
-        
-        self.returns_value = False
         
     def execute(self, calling_scope: Optional['Scope'], args: Optional[List[Any]]=None):
         fcall = FunctionCall(self.interpreter, self.name, self, args, calling_scope)
@@ -112,7 +126,7 @@ class FunctionScope():
     Represents a scope for functions
     '''
     interpreter: 'Interpreter'
-    functions: Dict[str, Function]
+    functions: Dict[Tuple[str, int], Function]  # Functions are uniquely identified by name and number of arguments
     parent: Optional['FunctionScope']
     
     def __init__(self, interpreter: Interpreter, parent: Optional['FunctionScope']=None):
@@ -122,19 +136,32 @@ class FunctionScope():
         
         self.parent = parent
         
-    def check_function(self, name, recursive=False):
-        if name in self.functions:
+    def check_function(self, name, argc, recursive=False):
+        if (name, argc) in self.functions:
+            return True
+        if (name, Interpreter.VAR_ARGS) in self.functions:
             return True
         if recursive and self.parent:
-            return self.parent.check_function(name, recursive)
+            return self.parent.check_function(name, argc, recursive)
     
-    def get_function(self, name):
-        if name in self.functions:
-            return self.functions[name]
+    def get_function(self, name, argc=0):
+        if (name, argc) in self.functions:
+            return self.functions[(name, argc)]
         elif self.parent:
-            return self.parent.get_function(name)
+            return self.parent.get_function(name, argc)
         else:
-            self.interpreter.error(ErrorType.NAME_ERROR, f"Function {name} has not been defined")
+            # search for a function with any number of arguments
+            if (name, Interpreter.VAR_ARGS) in self.functions:
+                return self.functions[(name, Interpreter.VAR_ARGS)]
+            
+            self.interpreter.error(ErrorType.NAME_ERROR, f"Function {name} with {argc} args has not been defined")
+            
+    def add_function(self, function, var_args=False):
+        if var_args:
+            self.functions[(function.name, Interpreter.VAR_ARGS)] = Function(self.interpreter, function)
+        else:
+            # functions are uniquely identified by name and number of arguments
+            self.functions[(function.name, len(function.args))] = Function(self.interpreter, function)
 
 class VariableScope():
     '''
@@ -209,8 +236,8 @@ class Scope():
     def check_function(self, name):
         return self.functions.check_function(name)
     
-    def get_function(self, name):
-        return self.functions.get_function(name)
+    def get_function(self, name, argc=0): # TODO reconsider default value for argc
+        return self.functions.get_function(name, argc=argc)
     
     def assign_function(self, name, function):
         self.functions.functions[name] = function
@@ -226,8 +253,6 @@ class PrintFunction(Function):
         self.function_node = None
         self.name = "print"
         self.statements = None
-        
-        self.returns_value = False
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         PrintFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
@@ -243,8 +268,6 @@ class InputFunction(Function):
         self.function_node = None
         self.name = "inputi"
         self.statements = None
-        
-        self.returns_value = True
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         return InputFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
@@ -269,11 +292,26 @@ class FunctionCall():
         self.calling_scope = calling_scope
         self.scope = Scope(interpreter=self.interpreter, variables=None, functions=calling_scope.functions) 
         
+        # add arguments to scope as variables, map each argument to the corresponding argument node's name
+        # with variable arguments such as print, there will be no arg nodes, so it's still possible to access the arguments by index
+        for arg, arg_node in zip(args, function.args):
+            self.scope.declare_variable(arg_node.get("name"))
+            self.scope.assign_variable(arg_node.get("name"), arg)
+        
     def run(self):
         # execute list of statement nodes in function node
         statements = self.function.function_node.get("statements")
+        
+        return_value = Interpreter.NIL
+        
         for statement in statements:
-            self.evaluate_statement(statement)
+            if statement.elem_type == InterpreterBase.RETURN_NODE:
+                return_value = self.evaluate_expression(statement.get("expression"))
+                break
+            else:
+                self.evaluate_statement(statement)
+    
+        return return_value
     
     def evaluate_statement(self, statement: Element):
         # Check that statement is a valid statement
@@ -293,8 +331,10 @@ class FunctionCall():
                 raise Exception(f"Invalid statement {statement.elem_type}")            
     
     def evaluate_fcall(self, fcall: Element):
+        func_name = fcall.get("name")
+        argc = len(fcall.get("args"))
         # get function from scope
-        function = self.scope.get_function(fcall.get("name"))
+        function = self.scope.get_function(func_name, argc)
         
         # execute function
         return function.execute(self.scope, fcall.get("args"))
@@ -311,9 +351,6 @@ class FunctionCall():
                 return self.evaluate_binary_op(expression)
             case InterpreterBase.FCALL_NODE:
                 fname = expression.get("name")
-                # Make sure that function call returns something
-                if not self.scope.get_function(fname).returns_value:
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Function {fname} does not return a value")
                 
                 value = self.evaluate_fcall(expression)
                 
@@ -385,10 +422,19 @@ class PrintFunctionCall(FunctionCall):
         # evaluate the arguments
         values = [self.evaluate_expression(arg) for arg in self.args]
         
+        for i, val in enumerate(values):
+            # replace bools with strings
+            if type(val) == bool:
+                values[i] = "true" if val else "false"
+            # replace NIL with "nil"
+            if val == Interpreter.NIL:
+                values[i] = "nil"
+                        
         # print the values
         output_string = "".join([str(val) for val in values])
         self.interpreter.output(output_string)
         
+        return Interpreter.NIL
         
 
 # ===================================== MAIN Testing =====================================
