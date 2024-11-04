@@ -179,7 +179,7 @@ class VariableScope():
         self.parent = parent
         
     def declare_variable(self, name):
-        # check if was already declared
+        # check if was already declared in current scope, it's fine to shadow outer scopes
         if self.check_variable(name, recursive=False):
             self.interpreter.error(ErrorType.NAME_ERROR, f"Variable {name} defined more than once")
         
@@ -272,46 +272,51 @@ class InputFunction(Function):
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         return InputFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
 
-class FunctionCall():
+class CodeBlock():
     '''
-    Represents the stack frame for a function call
+    Represents a block of code with its own variable scope
+    
+    Used for if and for statements
+    
+    Must propagate return statements to the outer fcall 
     '''
-    def __init__(self, interpreter: Interpreter, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
-        '''
-        interpreter: Interpreter - the interpreter object
-        name: str - name of the function
-        function: Element - the actual Function node to call
-        args: Optional[List[Any]] - the arguments to pass to the function
-        calling_scope: Optional[Scope] - the scope that called this function
-        '''
+    def __init__(self, interpreter: Interpreter, fcall: 'FunctionCall', statements: List[Element], calling_scope: Scope):
         self.interpreter = interpreter
         
-        self.name = name
-        self.args = args        
-        self.function = function
+        self.fcall = fcall
         self.calling_scope = calling_scope
-        self.scope = Scope(interpreter=self.interpreter, variables=None, functions=calling_scope.functions) 
         
-        # add arguments to scope as variables, map each argument to the corresponding argument node's name
-        # with variable arguments such as print, there will be no arg nodes, so it's still possible to access the arguments by index
-        for arg, arg_node in zip(args, function.args):
-            self.scope.declare_variable(arg_node.get("name"))
-            self.scope.assign_variable(arg_node.get("name"), arg)
-        
+        self.scope = Scope(interpreter=self.interpreter, variables=calling_scope.variables, functions=calling_scope.functions)
+
     def run(self):
-        # execute list of statement nodes in function node
-        statements = self.function.function_node.get("statements")
-        
-        return_value = Interpreter.NIL
-        
-        for statement in statements:
+        # execute list of statement nodes given
+        for statement in self.statements:
             if statement.elem_type == InterpreterBase.RETURN_NODE:
-                return_value = self.evaluate_expression(statement.get("expression"))
+                self.fcall.return_value = self.evaluate_expression(statement.get("expression"))
+                self.fcall.hit_return = True
                 break
             else:
                 self.evaluate_statement(statement)
+                
+            # if an inner function call hit a return statement, break out of the loop
+            if self.fcall.hit_return:
+                break
     
-        return return_value
+        return self.fcall.return_value
+    
+    def run_for(self, init_statement: Element, condition: Element, update_statement: Element):
+        # execute the initialization statement
+        self.evaluate_statement(init_statement)
+        
+        # loop until condition is false
+        while self.evaluate_expression(condition):
+            self.run()
+            
+            if self.fcall.hit_return:
+                return self.fcall.return_value
+            
+            # execute the update statement
+            self.evaluate_statement(update_statement)        
     
     def evaluate_statement(self, statement: Element):
         # Check that statement is a valid statement
@@ -327,6 +332,25 @@ class FunctionCall():
             case InterpreterBase.FCALL_NODE:
                 # evaluate the function call
                 self.evaluate_fcall(statement)
+            case InterpreterBase.IF_NODE:
+                # evaluate the condition
+                condition = self.evaluate_expression(statement.get("condition"))
+                    
+                # if the condition is true, execute the code block, if not execute the else block (if exists)
+                if condition:
+                    code_block = CodeBlock(self.interpreter, self.fcall, statement.get("statements"), self.scope)
+                    code_block.run()
+                elif statement.get("else"):                    
+                    code_block = CodeBlock(self.interpreter, self.fcall, statement.get("else"), self.scope)
+                    code_block.run()
+            case InterpreterBase.FOR_NODE:
+                init_statement = statement.get("init")
+                condition = statement.get("condition")
+                update_statement = statement.get("update")
+                
+                for_block = CodeBlock(self.interpreter, self.fcall, statement.get("statements"), self.scope)
+                for_block.run_for(init_statement, condition, update_statement)
+                
             case _:
                 raise Exception(f"Invalid statement {statement.elem_type}")            
     
@@ -386,6 +410,47 @@ class FunctionCall():
         except:
             self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {callable_type} but got {type(value)} of value {value}")
 
+    
+class FunctionCall():
+    '''
+    Represents the stack frame for a function call
+    '''
+    def __init__(self, interpreter: Interpreter, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
+        '''
+        interpreter: Interpreter - the interpreter object
+        name: str - name of the function
+        function: Element - the actual Function node to call
+        args: Optional[List[Any]] - the arguments to pass to the function
+        calling_scope: Optional[Scope] - the scope that called this function
+        '''
+        self.interpreter = interpreter
+        
+        self.name = name
+        self.args = args        
+        self.function = function
+        self.calling_scope = calling_scope
+        self.scope = Scope(interpreter=self.interpreter, variables=None, functions=calling_scope.functions) 
+
+        # keep track of if a return statement was hit, especially in nested code blocks
+        self.hit_return = False
+        # track return value, default to NIL
+        self.return_value = Interpreter.NIL
+        
+        # add arguments to scope as variables, map each argument to the corresponding argument node's name
+        # with variable arguments such as print, there will be no arg nodes, so it's still possible to access the arguments by index
+        for arg, arg_node in zip(args, function.args):
+            self.scope.declare_variable(arg_node.get("name"))
+            self.scope.assign_variable(arg_node.get("name"), arg)
+        
+    def run(self):
+        # execute list of statement nodes in function node
+        
+        # create a CodeBlock for the main statement body
+        code_block = CodeBlock(self.interpreter, self, self.function.statements, self.scope)
+        code_block.run()
+        
+        return self.return_value
+        
 class InputFunctionCall(FunctionCall):
     '''
     Represents a function call to the built-in input function
