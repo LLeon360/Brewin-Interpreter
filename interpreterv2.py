@@ -60,7 +60,6 @@ class Interpreter(InterpreterBase):
         super().__init__(console_output, inp) 
         
         self.global_scope = Scope(interpreter=self)
-        trace_output = True
         self.trace_output = trace_output
         
     def run(self, program: str):
@@ -343,9 +342,7 @@ class CodeBlock():
         for statement in self.statements:
             if statement.elem_type == InterpreterBase.RETURN_NODE:
                 if statement.get("expression"):
-                    print("returning value ")
                     self.fcall.return_value = self.evaluate_expression(statement.get("expression"))
-                    print(f"return value: {self.fcall.return_value}")
                 else:
                     self.fcall.return_value = Interpreter.NIL
                 self.fcall.hit_return = True
@@ -401,11 +398,9 @@ class CodeBlock():
                 if condition:
                     code_block = CodeBlock(self.interpreter, self.fcall, statement.get("statements"), self.scope)
                     code_block.run()
-                    print("IF BLOCK EXITED WITH " + str(self.fcall.return_value))
                 elif statement.get("else_statements"):                    
                     code_block = CodeBlock(self.interpreter, self.fcall, statement.get("else_statements"), self.scope)
                     code_block.run()
-                    print("ELSE BLOCK EXITED WITH " + str(self.fcall.return_value))
             case InterpreterBase.FOR_NODE:
                 init_statement = statement.get("init")
                 condition = statement.get("condition")
@@ -427,7 +422,6 @@ class CodeBlock():
         arg_values = [self.evaluate_expression(arg) for arg in fcall.get("args")]
         
         # execute function
-        print(f"CALLING FUNCTION {func_name} WITH ARGS {arg_values}")
         return function.execute(self.scope, arg_values)
     
     def evaluate_expression(self, expression: Element):   
@@ -449,9 +443,7 @@ class CodeBlock():
                 return self.evaluate_unary_op(expression)
             case InterpreterBase.FCALL_NODE:
                 fname = expression.get("name")
-                print("EVALUATING FUNCTION CALL " + fname)
                 value = self.evaluate_fcall(expression)
-                print(f"FINISHED EVALUATING FUNCTION CALL {fname} WITH VALUE {value}")
                 return value
             case _:
                 raise Exception(f"Invalid expression {expression.elem_type}")
@@ -624,8 +616,6 @@ class FunctionCall():
         # create a CodeBlock for the main statement body
         code_block = CodeBlock(self.interpreter, self, self.function.statements, self.scope)
         code_block.run()
-        
-        print(f"EXITING FUNCTION BLOCK {self.name} WITH " + str(self.return_value))
         
         return self.return_value
         
