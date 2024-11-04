@@ -45,6 +45,8 @@ class Interpreter(InterpreterBase):
         
         self.global_scope = Scope(interpreter=self)
         
+        self.trace_output = trace_output
+        
     def run(self, program: str):
         ast = parse_program(program)
         program_node = ast
