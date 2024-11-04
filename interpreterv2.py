@@ -507,27 +507,30 @@ class CodeBlock():
                 return left != right
             
             case Interpreter.GREATER_THAN_NODE:
-                # assert same type
-                if type(left) != type(right):
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)} for {left} > {right}")
+                # assert both ints
+                self.assert_int(left)
+                self.assert_int(right)
                 
                 return left > right
+            
             case Interpreter.LESS_THAN_NODE:
-                # assert same type
-                if type(left) != type(right):
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)} for {left} < {right}")
+                # assert both ints
+                self.assert_int(left)
+                self.assert_int(right)
                 
                 return left < right
+            
             case Interpreter.GREATER_THAN_EQ_NODE:
-                # assert same type
-                if type(left) != type(right):
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)} for {left} >= {right}")
+                # assert both ints
+                self.assert_int(left)
+                self.assert_int(right)
                 
                 return left >= right
+            
             case Interpreter.LESS_THAN_EQ_NODE:
-                # assert same type
-                if type(left) != type(right):
-                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)} for {left} <= {right}")
+                # assert both ints
+                self.assert_int(left)
+                self.assert_int(right)
                 
                 return left <= right
             
@@ -538,12 +541,14 @@ class CodeBlock():
                 self.assert_bool(right)
                 
                 return left and right
+            
             case Interpreter.OR_NODE:
                 # check if both are booleans
                 self.assert_bool(left)
                 self.assert_bool(right)
                 
                 return left or right
+            
             case _:
                 # This should never happen, binary op is only called on operators belonging to BINARY_OP_NODES
                 raise Exception(f"Invalid binary operator {binary_op.elem_type}")
@@ -693,17 +698,20 @@ class PrintFunctionCall(FunctionCall):
         
 
 # ===================================== MAIN Testing =====================================
-# def main():
-#     program_source = """func main() {
-#         var bar;
-#         bar = 5;
-#         print("The answer is: ", (10 + bar) - 6, "!");
-#     }
-#     """
+def main():
+    program_source = """func d() {
+  print("hello");
+}
+
+func main() {
+	print(nil == 5);
+	print(d() != nil);
+}
+    """
     
-#     interpreter = Interpreter()
+    interpreter = Interpreter()
     
-#     interpreter.run(program_source)
+    interpreter.run(program_source)
     
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()
