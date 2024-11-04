@@ -659,7 +659,7 @@ class InputSFunctionCall(FunctionCall):
     def run(self):
         # accept up to one argument
         if len(self.args) > 1:
-            self.interpreter.error(ErrorType.NAME_ERROR, f"No inputs() function found that takes > 1 parameter")\
+            self.interpreter.error(ErrorType.NAME_ERROR, f"No inputs() function found that takes > 1 parameter")
         
         # if there is an argument, print it
         if self.args:
