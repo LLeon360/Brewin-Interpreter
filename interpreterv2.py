@@ -16,20 +16,36 @@ class Interpreter(InterpreterBase):
     
     # Add some types for operators
     ASSIGN_NODE = "="
+    
+    # Binary Int operations
     ADD_NODE = "+"
     SUB_NODE = "-"
+    MULTIPLY_NODE = "*"
+    DIVIDE_NODE = "/"
+    
+    # Binary Comparison operations
+    EQUALS_NODE = "=="
+    NOT_EQUALS_NODE = "!="
+    GREATER_THAN_NODE = ">"
+    LESS_THAN_NODE = "<"
+    GREATER_THAN_EQ_NODE = ">="
+    LESS_THAN_EQ_NODE = "<="
+    
+    # Binary Logical operations
+    AND_NODE = "&&"
+    OR_NODE = "||"    
     
     # add Binary operators for expressions
-    BINARY_OP_NODES = [ADD_NODE, SUB_NODE]
+    BINARY_OP_NODES = [ADD_NODE, SUB_NODE, MULTIPLY_NODE, DIVIDE_NODE, EQUALS_NODE, NOT_EQUALS_NODE, GREATER_THAN_NODE, LESS_THAN_NODE, GREATER_THAN_EQ_NODE, LESS_THAN_EQ_NODE]
     
-    # unary operators TODO
-    # UNARY_OP_NODES = [InterpreterBase.NEG_NODE, InterpreterBase.NOT_NODE]
+    # Unary operators
+    UNARY_OP_NODES = [InterpreterBase.NEG_NODE, InterpreterBase.NOT_NODE]
     
     EXP_NODES = BINARY_OP_NODES + [InterpreterBase.FCALL_NODE]
     # side note: fcalls seem to be both expressions and statements, I believe the distinction is that the expressions (evaluate to / return) a value, this distinction isn't made on a syntax level, but on a semantic level
     
     # add value node types, int or string are valid elem_type
-    VAL_NODES = [InterpreterBase.INT_NODE, InterpreterBase.STRING_NODE]
+    VAL_NODES = [InterpreterBase.INT_NODE, InterpreterBase.STRING_NODE, InterpreterBase.BOOL_NODE, InterpreterBase.NIL_NODE]
     
     # add statement node types (variable definition, assignment, function call)
     STATEMENT_NODES = [InterpreterBase.VAR_DEF_NODE, ASSIGN_NODE, InterpreterBase.FCALL_NODE]
@@ -71,8 +87,12 @@ class Interpreter(InterpreterBase):
         self.global_scope.functions[("print", Interpreter.VAR_ARGS)] = PrintFunction(self)
         
         # the inputi funciton handles 0 or 1 arguments
-        self.global_scope.functions[("inputi", 0)] = InputFunction(self)
-        self.global_scope.functions[("inputi", 1)] = InputFunction(self)
+        self.global_scope.functions[("inputi", 0)] = InputIFunction(self)
+        self.global_scope.functions[("inputi", 1)] = InputIFunction(self)
+        
+        # the inputs funciton handles 0 or 1 arguments
+        self.global_scope.functions[("inputs", 0)] = InputSFunction(self)
+        self.global_scope.functions[("inputs", 1)] = InputSFunction(self)
         
         for func in funcs:
             assert(func.elem_type == InterpreterBase.FUNC_NODE)
@@ -259,11 +279,12 @@ class PrintFunction(Function):
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         PrintFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
         
-class InputFunction(Function):
+class InputIFunction(Function):
     """
-    Built in Input Function
+    Built in Input Function for Integers
     Overwrites the execute so no need to implement this in the AST format
     """
+    interpreter: Interpreter
     def __init__(self, interpreter: Interpreter):
         self.interpreter = interpreter
         
@@ -272,7 +293,23 @@ class InputFunction(Function):
         self.statements = None
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
-        return InputFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
+        return InputIFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
+
+class InputSFunction(Function):
+    """
+    Built in Input Function for Strings
+    Overwrites the execute so no need to implement this in the AST format
+    """
+    interpreter: Interpreter
+    def __init__(self, interpreter: Interpreter):
+        self.interpreter = interpreter
+        
+        self.function_node = None
+        self.name = "inputs"
+        self.statements = None
+    
+    def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
+        return InputSFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
 
 class CodeBlock():
     '''
@@ -310,8 +347,12 @@ class CodeBlock():
         # execute the initialization statement
         self.evaluate_statement(init_statement)
         
-        # loop until condition is false
-        while self.evaluate_expression(condition):
+        def eval_condition(condition: Element):
+            value = self.evaluate_expression(condition)
+            self.assert_bool(value)
+            return value
+        
+        while eval_condition(condition):
             self.run()
             
             if self.fcall.hit_return:
@@ -369,12 +410,18 @@ class CodeBlock():
         match (expression.elem_type):
             # if this is a value node just return value
             case e_t if e_t in Interpreter.VAL_NODES:
+                
+                if self.interpreter.trace_output:
+                    self.interpreter.output(f"Value node: {expression.get('val')} of type {expression.elem_type}")
+                    
                 return expression.get("val")
             # if this is var node try to retrieve from scope
             case InterpreterBase.VAR_NODE:
                 return self.scope.get_variable(expression.get("name"))
             case e_t if e_t in Interpreter.BINARY_OP_NODES:
                 return self.evaluate_binary_op(expression)
+            case e_t if e_t in Interpreter.UNARY_OP_NODES:
+                return self.evaluate_unary_op(expression)
             case InterpreterBase.FCALL_NODE:
                 fname = expression.get("name")
                 
@@ -385,34 +432,131 @@ class CodeBlock():
                 raise Exception(f"Invalid expression {expression.elem_type}")
         
     def evaluate_binary_op(self, binary_op: Element):
+        # strict evaluation, no short-circuiting, left and right are always evaluated
         left = self.evaluate_expression(binary_op.get("op1"))
         right = self.evaluate_expression(binary_op.get("op2"))
         
         match (binary_op.elem_type):
+            # Integer operations
             case Interpreter.ADD_NODE:
-                # try casting both to ints
-                left = self.cast_value(left, int)
-                right = self.cast_value(right, int)
                 
-                return left + right
+                # if both are ints
+                if type(left) == int and type(right) == int:
+                    return left + right
+                # if both are strings
+                elif type(left) == str and type(right) == str:
+                    return left + right
+                
+                # throw type error
+                self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected int or string but got {type(left)} and {type(right)}")
+                
             case Interpreter.SUB_NODE:
-                # try casting both to ints
-                left = self.cast_value(left, int)
-                right = self.cast_value(right, int)
+                # check that both are ints
+                self.assert_int(left)
+                self.assert_int(right)
                 
                 return left - right
+            case Interpreter.MULTIPLY_NODE:
+                # check that both are ints
+                self.assert_int(left)
+                self.assert_int(right)
+                
+                return left * right
+            case Interpreter.DIVIDE_NODE:
+                # check that both are ints
+                self.assert_int(left)
+                self.assert_int(right)
+                
+                # Catch divide by zero
+                if right == 0:
+                    # Note, this isn't defined in the spec, so will throw as a type error, but TODO this doesn't fit exactly
+                    self.interpreter.error(ErrorType.TYPE_ERROR, "Division by zero encountered: {left} / {right}")
+                
+                # DO INTEGER DIVISION
+                return left // right
+            
+            # comparisons
+            case Interpreter.EQUALS_NODE:
+                # allows different types
+                return left == right
+            case Interpreter.NOT_EQUALS_NODE:
+                # assert same type
+                if type(left) != type(right):
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                return left != right
+            
+            case Interpreter.GREATER_THAN_NODE:
+                # assert same type
+                if type(left) != type(right):
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                
+                return left > right
+            case Interpreter.LESS_THAN_NODE:
+                # assert same type
+                if type(left) != type(right):
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                
+                return left < right
+            case Interpreter.GREATER_THAN_EQ_NODE:
+                # assert same type
+                if type(left) != type(right):
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                
+                return left >= right
+            case Interpreter.LESS_THAN_EQ_NODE:
+                # assert same type
+                if type(left) != type(right):
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Expected Same Type for comparison, Invalid type, expected {type(left)} but got {type(right)}")
+                
+                return left <= right
+            
+            # logical operators
+            case Interpreter.AND_NODE:
+                # check if both are booleans
+                self.assert_bool(left)
+                self.assert_bool(right)
+                
+                return left and right
+            case Interpreter.OR_NODE:
+                # check if both are booleans
+                self.assert_bool(left)
+                self.assert_bool(right)
+                
+                return left or right
             case _:
                 # This should never happen, binary op is only called on operators belonging to BINARY_OP_NODES
                 raise Exception(f"Invalid binary operator {binary_op.elem_type}")
     
-    def cast_value(self, value: Any, callable_type: type):
-        try:
-            value = callable_type(value)
-            return value
-        except:
-            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {callable_type} but got {type(value)} of value {value}")
-
+    def evaluate_unary_op(self, unary_op: Element):
+        value = self.evaluate_expression(unary_op.get("op1"))
+        match (unary_op.elem_type):
+            case InterpreterBase.NEG_NODE:
+                # check if is an int
+                self.assert_int(value)
+                return -value
+            case InterpreterBase.NOT_NODE:
+                # check if is a bool
+                self.assert_bool(value)
+                return not value
+            case _:
+                # This should never happen, unary op is only called on operators belonging to UNARY_OP_NODES
+                raise Exception(f"Invalid unary operator {unary_op.elem_type}")
     
+    def assert_int(self, value: Any):
+        if type(value) != int:
+            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected int but got {type(value)}")
+    
+    def assert_bool(self, value: Any):
+        if type(value) != bool:
+            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected bool but got {type(value)}")
+    
+    # def cast_value(self, value: Any, callable_type: type):
+    #     try:
+    #         value = callable_type(value)
+    #         return value
+    #     except:
+    #         self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {callable_type} but got {type(value)} of value {value}")
+
 class FunctionCall():
     '''
     Represents the stack frame for a function call
@@ -453,7 +597,7 @@ class FunctionCall():
         
         return self.return_value
         
-class InputFunctionCall(FunctionCall):
+class InputIFunctionCall(FunctionCall):
     '''
     Represents a function call to the built-in input function
     '''
@@ -476,7 +620,27 @@ class InputFunctionCall(FunctionCall):
             input_value = int(input_value)
         except:
             self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected int but got {type(input_value)} of value {input_value}")
-        return input_value    
+        return input_value   
+
+class InputSFunctionCall(FunctionCall):
+    '''
+    Represents a function call to the built-in input function
+    '''
+    def __init__(self, interpreter: Interpreter, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
+        super().__init__(interpreter, name, function, args, calling_scope)
+        
+    def run(self):
+        # accept up to one argument
+        if len(self.args) > 1:
+            self.interpreter.error(ErrorType.NAME_ERROR, f"No inputs() function found that takes > 1 parameter")
+        
+        # if there is an argument, print it
+        if self.args:
+            prompt = self.evaluate_expression(self.args[0])
+            self.interpreter.output(prompt)
+        
+        input_value = self.interpreter.get_input()
+        return input_value 
     
 class PrintFunctionCall(FunctionCall):
     '''
