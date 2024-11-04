@@ -659,10 +659,7 @@ class InputSFunctionCall(FunctionCall):
     def run(self):
         # accept up to one argument
         if len(self.args) > 1:
-            self.interpreter.error(ErrorType.NAME_ERROR, f"No inputs() function found that takes > 1 parameter")
-        
-        # Make a code block just to evaluate expressions
-        code_block = CodeBlock(self.interpreter, self, self.function.statements, self.scope)
+            self.interpreter.error(ErrorType.NAME_ERROR, f"No inputs() function found that takes > 1 parameter")\
         
         # if there is an argument, print it
         if self.args:
@@ -698,20 +695,20 @@ class PrintFunctionCall(FunctionCall):
         
 
 # ===================================== MAIN Testing =====================================
-def main():
-    program_source = """func d() {
-  print("hello");
-}
+# def main():
+#     program_source = """func d() {
+#   print("hello");
+# }
 
-func main() {
-	print(nil == 5);
-	print(d() != nil);
-}
-    """
+# func main() {
+# 	print(nil == 5);
+# 	print(d() != nil);
+# }
+#     """
     
-    interpreter = Interpreter()
+#     interpreter = Interpreter()
     
-    interpreter.run(program_source)
+#     interpreter.run(program_source)
     
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
