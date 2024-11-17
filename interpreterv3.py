@@ -138,24 +138,14 @@ class Interpreter(InterpreterBase):
         else:
             # allow Interpreter NIL or the value must have a matching structure to the struct type definition
             
-            if value != Interpreter.NIL and type(value) != dict:
-                # check if value is NIL or a dict
-                self.interpter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {self.var_type} but got {value}")
-            elif type(value) == dict:
-                # if value is a struct (represented as a dict), check that the fields match the struct definition
-                struct_type = Variable.typings[var_type]
-        
-                # check that all fields are present and of the correct type
-                for field_name, field_type in struct_type.items():
-                    if field_name not in value:
-                        self.error(ErrorType.TYPE_ERROR, f"Field {field_name} missing in struct {var_type}")
-                    
-                    self.type_check(field_type, value[field_name])
-
-                # check that there are no fields that are not in the struct definition
-                for field_name in value:
-                    if field_name not in struct_type:
-                        self.error(ErrorType.TYPE_ERROR, f"Field {field_name} not defined in struct {var_type}")
+            # if the value is NIL, it's fine
+            if value == self.NIL:
+                return
+            # check that the value is a Struct and that it's type matches
+            if not isinstance(value, Struct):
+                self.error(ErrorType.TYPE_ERROR, f"Invalid type, expected struct but got {type(value)}")
+            if value.struct_type != var_type:
+                self.error(ErrorType.TYPE_ERROR, f"Invalid type, expected struct {var_type} but got {value.struct_type}")
     
     def add_struct(self, struct_def_node: Element):
         '''
@@ -193,7 +183,7 @@ class Variable():
     interpreter: Interpreter
     value: Any
     
-    def __init__(self, interpreter: Interpreter, value: Any, var_type: str):
+    def __init__(self, interpreter: Interpreter, var_type: str):
         self.interpreter = interpreter
         
         self.value = None
@@ -202,21 +192,32 @@ class Variable():
             self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type {var_type} in variable definition")
 
         self.var_type: str = var_type
-        self.assign(value)        
+        
+        self.assign_default()
                 
     def assign(self, value: Any):
         # perform appropriate type checking of the value
         self.interpreter.type_check(self.var_type, value)
         
+        # Aside, need to convert NIL to Struct of NIL for future type checking
+        if value == self.interpreter.NIL:
+            value = Struct(self.interpreter, self.var_type)
+        
         self.value = value        
-    
+        
+    def assign_default(self):
+        if self.var_type in self.interpreter.primitive_types:
+            self.value = self.interpreter.defined_types[self.var_type]()
+        else:
+            self.value = Struct(self.interpreter, self.var_type) # without specifiying new_struct, this will be NIL
+   
 class Function():
     '''
     Represents a function definition
     '''
     interpreter: Interpreter
     function_node: Element
-    
+
     name: str
     args: List[Element] # list of argument nodes
     statements: List[Element] # list of statement nodes
@@ -298,14 +299,24 @@ class VariableScope():
         
         self.parent = parent
         
-    def declare_variable(self, name):
+    def declare_variable(self, name: str, type: str):
         # check if was already declared in current scope, it's fine to shadow outer scopes
         if self.check_variable(name, recursive=False):
             self.interpreter.error(ErrorType.NAME_ERROR, f"Variable {name} defined more than once")
         
-        self.variables[name] = Variable(interpreter=self.interpreter)
+        self.variables[name] = Variable(interpreter=self.interpreter, var_type=type)
         
     def assign_variable(self, name, value):
+        # handle struct.field... by splitting recursively
+        if "." in name:
+            parts = name.split(".")
+            struct_name = parts[0]
+            field_name = ".".join(parts[1:])
+            struct = self.get_variable(struct_name)
+            # NIL checks are done in the struct
+            struct.assign_variable(field_name, value)
+            return
+        
         if self.check_variable(name):
             self.variables[name].assign(value)
         elif self.parent:
@@ -314,6 +325,15 @@ class VariableScope():
             self.interpreter.error(ErrorType.NAME_ERROR, f"Variable {name} has not been defined")
             
     def get_variable(self, name):
+        # handle struct.field... by splitting recursively
+        if "." in name:
+            parts = name.split(".")
+            struct_name = parts[0]
+            field_name = ".".join(parts[1:])
+            struct = self.get_variable(struct_name)
+            # NIL checks are done in the struct
+            return struct.get_variable(field_name)
+        
         if self.check_variable(name):
             return self.variables[name].value
         elif self.parent:
@@ -327,6 +347,46 @@ class VariableScope():
         if recursive and self.parent:
             return self.parent.check_variable(name, recursive)
 
+class Struct():
+    '''
+    Represents the value of a struct
+    '''
+    Interpreter: Interpreter
+    fields: Optional["VariableScope"] # may also be Interpreter.NIL
+    struct_type: str
+    
+    def __init__(self, interpreter: "Interpreter", struct_type: str, new_struct=False):
+        self.interpreter = interpreter
+        
+        self.struct_type = struct_type
+        self.fields = Interpreter.NIL
+        
+        # if this is a new struct, create a new scope for the fields
+        if new_struct:
+            self.fields = VariableScope(interpreter=self.interpreter)
+            
+            # get the struct definition
+            struct_def = self.interpreter.defined_types.get(struct_type, None)
+            
+            if not struct_def:
+                self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, struct {struct_type} is not defined")
+            
+            # declare each field in the struct
+            for field_name, field_type in struct_def.items():
+                self.fields.declare_variable(field_name)
+    
+    def assign_variable(self, name, value):
+        if self.fields:
+            self.fields.assign_variable(name, value)
+        else:
+            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, struct is NIL")
+    
+    def get_variable(self, name):
+        if self.fields:
+            return self.fields.get_variable(name)
+        else:
+            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, struct is NIL")
+    
 class Scope():
     '''
     Represents a scope of variables and functions
@@ -341,8 +401,8 @@ class Scope():
         self.variables = VariableScope(interpreter=self.interpreter, parent=variables)
         self.functions = FunctionScope(interpreter=self.interpreter, parent=functions)
         
-    def declare_variable(self, name):
-        self.variables.declare_variable(name)
+    def declare_variable(self, name: str, type: str):
+        self.variables.declare_variable(name, type)
     
     def assign_variable(self, name, value):
         self.variables.assign_variable(name, value)
@@ -479,7 +539,7 @@ class CodeBlock():
         match (statement.elem_type):
             case InterpreterBase.VAR_DEF_NODE:
                 # add the variable to the scope
-                self.scope.declare_variable(statement.get("name"))
+                self.scope.declare_variable(statement.get("name"), statement.get("var_type"))
             case Interpreter.ASSIGN_NODE:
                 # assign the variable
                 self.scope.assign_variable(statement.get("name"), self.evaluate_expression(statement.get("expression")))
