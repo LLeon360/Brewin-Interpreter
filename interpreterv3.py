@@ -397,13 +397,13 @@ class Struct():
         if self.fields:
             self.fields.assign_variable(name, value)
         else:
-            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, struct is NIL")
+            self.interpreter.error(ErrorType.FAULT_ERROR, f"Invalid type, struct is NIL")
     
     def get_variable(self, name):
         if self.fields:
             return self.fields.get_variable(name)
         else:
-            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, struct is NIL")
+            self.interpreter.error(ErrorType.FAULT_ERROR, f"Invalid type, struct is NIL")
     
 class Scope():
     '''
@@ -969,19 +969,15 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-func main() : int {
-  var a: int; 
-  a = 1;
-  print(a);
- 
-  var b: string;
-  b = "foo";
-  print("|",b,"|");
-
-  var c: bool;
-  c = true;
-  print(c);
+struct s {
+  a:int;
 }
+
+func main() : int {
+  var x: s;
+  x.a = 10; 
+}
+
     """
     
     interpreter = Interpreter()
