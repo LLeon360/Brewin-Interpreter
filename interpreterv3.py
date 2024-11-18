@@ -714,10 +714,15 @@ class CodeBlock():
                     # otherwise both must be same struct type
                     elif left.struct_type != right.struct_type:
                         self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, tried to compare struct {left.struct_type} to struct {right.struct_type}")
+                        
+                    # if both are NIL wrapped structs of same type, should be equal even though reference not necessarily same
+                    if type(left) == Struct and type(right) == Struct and left.fields == Interpreter.NIL and right.fields == Interpreter.NIL:
+                        return True
+                        
                 elif type(left) != type(right):
                     # for primitive types, they must be the same after coercion
                     self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, tried to compare {type(left)} to {type(right)}")
-
+                
                 return left == right
             
             case Interpreter.NOT_EQUALS_NODE:
@@ -978,10 +983,32 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-func main() : void {
-  var a : int;
-  a.b = 5;
+struct dog {
+  a : int;
 }
+
+func dog_gen(): dog {
+  var doge: dog;
+  return doge;
+}
+
+func main(): void {
+  var doga: dog;
+  print(doga == nil);
+  var dogb: dog;
+  dogb = doga;
+  print(dogb==doga);
+  var dogc: dog;
+  print(dogc == doga);
+  
+  print(dog_gen()==doga);
+  print(dog_gen()==dogb);
+  print(dog_gen()==dogc);
+}
+
+
+
+
     """
     
     interpreter = Interpreter()
