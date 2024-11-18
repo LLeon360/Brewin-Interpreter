@@ -41,7 +41,7 @@ class Interpreter(InterpreterBase):
     # Unary operators
     UNARY_OP_NODES = [InterpreterBase.NEG_NODE, InterpreterBase.NOT_NODE]
     
-    EXP_NODES = BINARY_OP_NODES + [InterpreterBase.FCALL_NODE]
+    EXP_NODES = BINARY_OP_NODES + UNARY_OP_NODES + [InterpreterBase.FCALL_NODE, InterpreterBase.NEW_NODE, InterpreterBase.VAR_NODE]
     # side note: fcalls seem to be both expressions and statements, I believe the distinction is that the expressions (evaluate to / return) a value, this distinction isn't made on a syntax level, but on a semantic level
     
     # add value node types, int or string are valid elem_type
@@ -614,6 +614,12 @@ class CodeBlock():
                 fname = expression.get("name")
                 value = self.evaluate_fcall(expression)
                 return value
+            case InterpreterBase.NEW_NODE:
+                struct_type = expression.get("struct_type")
+                # check that the struct type is defined
+                if struct_type not in self.interpreter.defined_types:
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, attempted to new, struct {struct_type} is not defined")
+                return Struct(self.interpreter, struct_type, new_struct=True)
             case _:
                 raise Exception(f"Invalid expression {expression.elem_type}")
         
