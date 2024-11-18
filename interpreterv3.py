@@ -221,7 +221,7 @@ class Function():
     name: str
     args: List[Element] # list of argument nodes
     statements: List[Element] # list of statement nodes
-    
+    return_type: str
     
     def __init__(self, interpreter: Interpreter, function_node: Element):
         self.interpreter = interpreter
@@ -234,6 +234,11 @@ class Function():
         self.name = function_node.get("name")
         self.args = function_node.get("args")
         self.statements = function_node.get("statements")
+        self.return_type = function_node.get("return_type")
+        
+        # ensure that return type exists or is void
+        if self.return_type != "void" and self.return_type not in self.interpreter.defined_types:
+            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, return type {self.return_type} is not defined")
         
     def execute(self, calling_scope: Optional['Scope'], args: Optional[List[Any]]=None):
         # args are being passed by value here
@@ -434,6 +439,7 @@ class PrintFunction(Function):
         self.name = "print"
         self.statements = None
         self.args = [] # no named args
+        self.return_type = "void"
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         PrintFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
@@ -451,6 +457,7 @@ class InputIFunction(Function):
         self.name = "inputi"
         self.statements = None
         self.args = [] # no named args
+        self.return_type = "int"
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         return InputIFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
@@ -468,6 +475,7 @@ class InputSFunction(Function):
         self.name = "inputs"
         self.statements = None
         self.args = [] # no named args
+        self.return_type = "string"
     
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         return InputSFunctionCall(self.interpreter, self.name, self, args, calling_scope).run()
@@ -498,7 +506,13 @@ class CodeBlock():
         for statement in self.statements:
             if statement.elem_type == InterpreterBase.RETURN_NODE:
                 if statement.get("expression"):
-                    self.fcall.return_value = self.evaluate_expression(statement.get("expression"))
+                    # check if return type is void
+                    if self.fcall.return_type == "void":
+                        self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid return, expected void but got {self.fcall.return_type}")
+                    
+                    value_evaluted = self.evaluate_expression(statement.get("expression"))
+                    
+                    self.fcall.return_value.assign(value_evaluted)
                 else:
                     self.fcall.return_value = Interpreter.NIL
                 self.fcall.hit_return = True
@@ -760,8 +774,10 @@ class FunctionCall():
 
         # keep track of if a return statement was hit, especially in nested code blocks
         self.hit_return = False
-        # track return value, default to NIL
-        self.return_value = Interpreter.NIL
+        self.return_type = self.function.return_type
+        
+        # use this to track the return variable, use existing variable system to track the return value and type check
+        self.return_value = None
         
         # add arguments to scope as variables, map each argument to the corresponding argument node's name
         # with variable arguments such as print, there will be no arg nodes, so it's still possible to access the arguments by index
@@ -771,13 +787,21 @@ class FunctionCall():
             self.scope.assign_variable(arg_name, arg_value)
         
     def run(self):
+        # set up return value if not void
+        if self.return_type != "void":
+            self.return_value = Variable(self.interpreter, self.return_type)
+        
         # execute list of statement nodes in function node
         
         # create a CodeBlock for the main statement body
         code_block = CodeBlock(self.interpreter, self, self.function.statements, self.scope)
         code_block.run()
         
-        return self.return_value
+        # return no value for void functions
+        if self.return_type == "void":
+            return
+        
+        return self.return_value.value
         
 class InputIFunctionCall(FunctionCall):
     '''
@@ -801,7 +825,7 @@ class InputIFunctionCall(FunctionCall):
         try:
             input_value = int(input_value)
         except:
-            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected int but got {type(input_value)} of value {input_value}")
+            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected int but got {type(input_value)} of value {input_value} in inputi")
         return input_value   
 
 class InputSFunctionCall(FunctionCall):
@@ -822,6 +846,10 @@ class InputSFunctionCall(FunctionCall):
             self.interpreter.output(prompt)
         
         input_value = self.interpreter.get_input()
+        
+        # Check that it's a string
+        self.interpreter.type_check("string", input_value)
+        
         return input_value 
     
 class PrintFunctionCall(FunctionCall):
@@ -846,7 +874,7 @@ class PrintFunctionCall(FunctionCall):
         output_string = "".join([str(val) for val in values])
         self.interpreter.output(output_string)
         
-        return Interpreter.NIL
+        return 
         
 
 # ===================================== MAIN Testing =====================================
