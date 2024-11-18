@@ -81,7 +81,7 @@ class Interpreter(InterpreterBase):
         assert(program_node.elem_type == InterpreterBase.PROGRAM_NODE)
         
         # add functions under program node to scope
-        self.setup_global_scope(program_node.get("functions"))
+        self.setup_global_scope(program_node.get("functions"), program_node.get("structs"))
         
         # check that main is defined
         if not self.global_scope.check_function("main", 0):
@@ -90,10 +90,14 @@ class Interpreter(InterpreterBase):
         # call the main function
         self.global_scope.functions.functions[("main", 0)].execute(self.global_scope, [])
         
-    def setup_global_scope(self, funcs: List[Element]):
+    def setup_global_scope(self, funcs: List[Element], structs_defs: List[Element]):
         """
-        Add built-in functions to the main scope
+        Add built-in functions, then user defined functions and structs to the global scope
         """
+            
+        for struct_def in structs_defs:
+            assert(struct_def.elem_type == InterpreterBase.STRUCT_NODE)
+            self.add_struct(struct_def)
         
         self.global_scope.functions.functions[("print", Interpreter.VAR_ARGS)] = PrintFunction(self)
         
@@ -108,8 +112,7 @@ class Interpreter(InterpreterBase):
         for func in funcs:
             assert(func.elem_type == InterpreterBase.FUNC_NODE)
             self.global_scope.add_function(func)
-            
-        # TODO add struct definitions to defined_types
+        
     
     # Apply coercian from given type to the type of the variable
     def coerce(self, var_type: str, value: Any):
@@ -169,19 +172,19 @@ class Interpreter(InterpreterBase):
         struct_name: str = struct_def_node.get("name")
         field_def_nodes: List[Element] = struct_def_node.get("fields")
         
-        if struct_name in self.typings:
+        if struct_name in self.defined_types:
             self.error(ErrorType.TYPE_ERROR, f"Struct {struct_name} already defined")
         
         # map each field to a type
         struct_type: Dict[str, str] = {}
-        Variable.typings[struct_name] = struct_type
+        self.defined_types[struct_name] = struct_type
         
         for field_def in field_def_nodes:
             field_name = field_def.get("name")
             field_type = field_def.get("var_type")
             
             # Check that the field type is valid
-            if field_type not in Variable.typings:
+            if field_type not in self.defined_types:
                 self.error(ErrorType.TYPE_ERROR, f"Invalid type {field_type} in field definition")
                 
             struct_type[field_name] = field_type     
@@ -198,7 +201,7 @@ class Variable():
         
         self.value = None
 
-        if var_type not in self.typings:
+        if var_type not in self.interpreter.defined_types:
             self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type {var_type} in variable definition")
 
         self.var_type: str = var_type
@@ -384,14 +387,11 @@ class Struct():
             self.fields = VariableScope(interpreter=self.interpreter)
             
             # get the struct definition
-            struct_def = self.interpreter.defined_types.get(struct_type, None)
-            
-            if not struct_def:
-                self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, struct {struct_type} is not defined")
+            struct_def = self.interpreter.defined_types.get(struct_type, None)\
             
             # declare each field in the struct
             for field_name, field_type in struct_def.items():
-                self.fields.declare_variable(field_name)
+                self.fields.declare_variable(field_name, field_type)
     
     def assign_variable(self, name, value):
         if self.fields:
