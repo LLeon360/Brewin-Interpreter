@@ -822,21 +822,6 @@ class CodeBlock():
             case _:
                 # This should never happen, unary op is only called on operators belonging to UNARY_OP_NODES
                 raise Exception(f"Invalid unary operator {unary_op.elem_type}")
-    
-    # def assert_int(self, value: Any):
-    #     if type(value) != int:
-    #         self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected int but got {type(value)}")
-    
-    # def assert_bool(self, value: Any):
-    #     if type(value) != bool:
-    #         self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected bool but got {type(value)}")
-    
-    # def cast_value(self, value: Any, callable_type: type):
-    #     try:
-    #         value = callable_type(value)
-    #         return value
-    #     except:
-    #         self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {callable_type} but got {type(value)} of value {value}")
 
 class FunctionCall():
     '''
@@ -981,39 +966,37 @@ class PrintFunctionCall(FunctionCall):
         
 
 # ===================================== MAIN Testing =====================================
-def main():
-    program_source = """
-struct dog {
-  a : int;
-}
+# def main():
+#     program_source = """
+# struct dog {
+#   a : int;
+# }
 
-func dog_gen(): dog {
-  var doge: dog;
-  return doge;
-}
-
-func main(): void {
-  var doga: dog;
-  print(doga == nil);
-  var dogb: dog;
-  dogb = doga;
-  print(dogb==doga);
-  var dogc: dog;
-  print(dogc == doga);
+# func dog_gen(): dog {
+#   var doge: dog;
+#   return doge;
+# }
+# func dog_gen2(): dog {
+#   return;
+# }
+# func main(): void {
+#   var doga: dog;
+#   print(doga == nil);
+#   var dogb: dog;
+#   dogb = doga;
+#   print(dogb==doga);
+#   var dogc: dog;
+#   print(dogc == doga);
   
-  print(dog_gen()==doga);
-  print(dog_gen()==dogb);
-  print(dog_gen()==dogc);
-}
-
-
-
-
-    """
+#   print(dog_gen()==doga);
+  
+#   print(dog_gen2()==doga);
+# }
+#     """
     
-    interpreter = Interpreter()
+#     interpreter = Interpreter()
     
-    interpreter.run(program_source)
+#     interpreter.run(program_source)
     
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
