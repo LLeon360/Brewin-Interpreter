@@ -146,16 +146,16 @@ class Interpreter(InterpreterBase):
         
         # for primitives, see if the value is of the correct type
         if var_type in self.primitive_types:
-            if type(value) != self.primitive_types[self.var_type]:
-                self.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {self.var_type} but got {type(value)}")
+            if type(value) != self.primitive_types[var_type]:
+                self.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {var_type} but got {type(value)}")
         else:
             # allow Interpreter NIL or the value must have a matching structure to the struct type definition
             
             # if the value is NIL, it's fine
-            if value == self.NIL:
+            if value == Interpreter.NIL:
                 return
             # check that the value is a Struct and that it's type matches
-            if not isinstance(value, Struct):
+            if not isinstance(value, Struct): # this shouldn't happen
                 self.error(ErrorType.TYPE_ERROR, f"Invalid type, expected struct but got {type(value)}")
             if value.struct_type != var_type:
                 self.error(ErrorType.TYPE_ERROR, f"Invalid type, expected struct {var_type} but got {value.struct_type}")
@@ -216,7 +216,7 @@ class Variable():
         self.interpreter.type_check(self.var_type, value)
         
         # Aside, need to convert NIL to Struct of NIL for future type checking
-        if value == self.interpreter.NIL:
+        if value == Interpreter.NIL:
             value = Struct(self.interpreter, self.var_type)
         
         self.value = value        
@@ -967,20 +967,26 @@ class PrintFunctionCall(FunctionCall):
         
 
 # ===================================== MAIN Testing =====================================
-# def main():
-#     program_source = """func d() {
-#   print("hello");
-# }
+def main():
+    program_source = """
+func main() : int {
+  var a: int; 
+  a = 1;
+  print(a);
+ 
+  var b: string;
+  b = "foo";
+  print("|",b,"|");
 
-# func main() {
-# 	print(nil == 5);
-# 	print(d() != nil);
-# }
-#     """
+  var c: bool;
+  c = true;
+  print(c);
+}
+    """
     
-#     interpreter = Interpreter()
+    interpreter = Interpreter()
     
-#     interpreter.run(program_source)
+    interpreter.run(program_source)
     
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()
