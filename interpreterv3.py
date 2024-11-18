@@ -111,15 +111,25 @@ class Interpreter(InterpreterBase):
             
         # TODO add struct definitions to defined_types
     
-    
-    def coerce(self, type: str):
-        if self.var_type == "int" and type == "bool":
-            return (self.value != 0)
+    # Apply coercian from given type to the type of the variable
+    def coerce(self, var_type: str, value: Any):
+        '''
+        Attempt to coerce the value to the desire type if applicable
         
-        if self.var_type != type:
-            self.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {type} but got {self.var_type}")
+        Current supported coercions:
+        Int to Bool: non-zero to True, zero to False
         
-        return self.value
+        var_type: str - the type to coerce to
+        value: Any - the value to coerce
+        '''
+        
+        py_type = type(value)
+        if py_type in self.primitive_types.values():
+            # int to bool
+            if py_type == int and var_type == "bool":
+                return (value != 0)
+            
+        return value
     
     def type_check(self, var_type: str, value: Any):
         '''
@@ -196,6 +206,9 @@ class Variable():
         self.assign_default()
                 
     def assign(self, value: Any):
+        # attempt coercion, will do nothing if not applicable
+        value = self.interpreter.coerce(self.var_type, value)
+        
         # perform appropriate type checking of the value
         self.interpreter.type_check(self.var_type, value)
         
@@ -543,7 +556,12 @@ class CodeBlock():
         
     def evaluate_condition(self, condition: Element):
         value = self.evaluate_expression(condition)
-        self.assert_bool(value)
+        
+        # attempt coercion to bool
+        value = self.interpreter.coerce("bool", value)
+        
+        # type check as bool
+        self.interpreter.type_check("bool", value)
         return value
     
     def evaluate_statement(self, statement: Element):
@@ -643,21 +661,21 @@ class CodeBlock():
                 self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected int or string but got {type(left)} and {type(right)}")
                 
             case Interpreter.SUB_NODE:
-                # check that both are ints
-                self.assert_int(left)
-                self.assert_int(right)
+                # assert both ints
+                self.interpreter.type_check("int", left)
+                self.interpreter.type_check("int", right)
                 
                 return left - right
             case Interpreter.MULTIPLY_NODE:
-                # check that both are ints
-                self.assert_int(left)
-                self.assert_int(right)
+                # assert both ints
+                self.interpreter.type_check("int", left)
+                self.interpreter.type_check("int", right)
                 
                 return left * right
             case Interpreter.DIVIDE_NODE:
-                # check that both are ints
-                self.assert_int(left)
-                self.assert_int(right)
+                # assert both ints
+                self.interpreter.type_check("int", left)
+                self.interpreter.type_check("int", right)
                 
                 # Catch divide by zero
                 if right == 0:
@@ -669,58 +687,103 @@ class CodeBlock():
             
             # comparisons
             case Interpreter.EQUALS_NODE:
-                # allows different types
-                if type(left) != type(right):
-                    return False
+                # if one is bool attempt coercion of other to bool
+                if type(left) == bool:
+                    right = self.interpreter.coerce("bool", right)
+                elif type(right) == bool:
+                    left = self.interpreter.coerce("bool", left)
                 
+                # if either is a struct
+                if type(left) == Struct or type(right) == Struct:
+                    # allow comparison of any struct to a NIL
+                    if (type(left) == Struct and right == Interpreter.NIL) or (type(right) == Struct and left == Interpreter.NIL):
+                        if type(left) == Struct:
+                            left = left.fields # will be NIL if NIL
+                        if type(right) == Struct:
+                            right = right.fields # will be NIL if NIL
+                    
+                    # otherwise both must be same struct type
+                    elif left.struct_type != right.struct_type:
+                        self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, tried to compare struct {left.struct_type} to struct {right.struct_type}")
+                elif type(left) != type(right):
+                    # for primitive types, they must be the same after coercion
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, tried to compare {type(left)} to {type(right)}")
+
                 return left == right
+            
             case Interpreter.NOT_EQUALS_NODE:
-                # allows different types
-                if type(left) != type(right):
-                    return True
+                # if one is bool attempt coercion of other to bool
+                if type(left) == bool:
+                    right = self.interpreter.coerce("bool", right)
+                elif type(right) == bool:
+                    left = self.interpreter.coerce("bool", left)
+                
+                # if either is a struct
+                if type(left) == Struct or type(right) == Struct:
+                    # allow comparison of any struct to a NIL
+                    if (type(left) == Struct and right == Interpreter.NIL) or (type(right) == Struct and left == Interpreter.NIL):
+                        if type(left) == Struct:
+                            left = left.fields # will be NIL if NIL
+                        if type(right) == Struct:
+                            right = right.fields # will be NIL if NIL
+                    
+                    # otherwise both must be same struct type
+                    elif left.struct_type != right.struct_type:
+                        self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, tried to compare struct {left.struct_type} to struct {right.struct_type}")
+                elif type(left) != type(right):
+                    # for primitive types, they must be the same after coercion
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, tried to compare {type(left)} to {type(right)}")
                 
                 return left != right
             
             case Interpreter.GREATER_THAN_NODE:
                 # assert both ints
-                self.assert_int(left)
-                self.assert_int(right)
+                self.interpreter.type_check("int", left)
+                self.interpreter.type_check("int", right)
                 
                 return left > right
             
             case Interpreter.LESS_THAN_NODE:
                 # assert both ints
-                self.assert_int(left)
-                self.assert_int(right)
+                self.interpreter.type_check("int", left)
+                self.interpreter.type_check("int", right)
                 
                 return left < right
             
             case Interpreter.GREATER_THAN_EQ_NODE:
                 # assert both ints
-                self.assert_int(left)
-                self.assert_int(right)
+                self.interpreter.type_check("int", left)
+                self.interpreter.type_check("int", right)
                 
                 return left >= right
             
             case Interpreter.LESS_THAN_EQ_NODE:
                 # assert both ints
-                self.assert_int(left)
-                self.assert_int(right)
+                self.interpreter.type_check("int", left)
+                self.interpreter.type_check("int", right)
                 
                 return left <= right
             
             # logical operators
             case Interpreter.AND_NODE:
+                # attempt coercion to bool
+                left = self.interpreter.coerce("bool", left)
+                right = self.interpreter.coerce("bool", right)
+                
                 # check if both are booleans
-                self.assert_bool(left)
-                self.assert_bool(right)
+                self.interpreter.type_check("bool", left)
+                self.interpreter.type_check("bool", right)
                 
                 return left and right
             
             case Interpreter.OR_NODE:
+                # attempt coercion to bool
+                left = self.interpreter.coerce("bool", left)
+                right = self.interpreter.coerce("bool", right)
+                
                 # check if both are booleans
-                self.assert_bool(left)
-                self.assert_bool(right)
+                self.interpreter.type_check("bool", left)
+                self.interpreter.type_check("bool", right)
                 
                 return left or right
             
@@ -733,23 +796,26 @@ class CodeBlock():
         match (unary_op.elem_type):
             case InterpreterBase.NEG_NODE:
                 # check if is an int
-                self.assert_int(value)
+                self.interpreter.type_check("int", value)
                 return -value
             case InterpreterBase.NOT_NODE:
+                # Barista appears to support coercion on not, although the spec is not clear about this
+                # attempt coercion to bool
+                value = self.interpreter.coerce("bool", value)
                 # check if is a bool
-                self.assert_bool(value)
+                self.interpreter.type_check("bool", value)
                 return not value
             case _:
                 # This should never happen, unary op is only called on operators belonging to UNARY_OP_NODES
                 raise Exception(f"Invalid unary operator {unary_op.elem_type}")
     
-    def assert_int(self, value: Any):
-        if type(value) != int:
-            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected int but got {type(value)}")
+    # def assert_int(self, value: Any):
+    #     if type(value) != int:
+    #         self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected int but got {type(value)}")
     
-    def assert_bool(self, value: Any):
-        if type(value) != bool:
-            self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected bool but got {type(value)}")
+    # def assert_bool(self, value: Any):
+    #     if type(value) != bool:
+    #         self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected bool but got {type(value)}")
     
     # def cast_value(self, value: Any, callable_type: type):
     #     try:
@@ -886,6 +952,12 @@ class PrintFunctionCall(FunctionCall):
             # replace NIL with "nil"
             if val == Interpreter.NIL:
                 values[i] = "nil"
+            if type(val) == Struct:
+                # handle the Struct wrapping NIL case
+                if val.fields == Interpreter.NIL:
+                    values[i] = "nil"
+                else:
+                    values[i] = val.fields
                         
         # print the values
         output_string = "".join([str(val) for val in values])
