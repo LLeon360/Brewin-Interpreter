@@ -638,7 +638,7 @@ class CodeBlock():
                 value = self.evaluate_fcall(expression)
                 return value
             case InterpreterBase.NEW_NODE:
-                struct_type = expression.get("struct_type")
+                struct_type = expression.get("var_type")
                 # check that the struct type is defined
                 if struct_type not in self.interpreter.defined_types:
                     self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, attempted to new, struct {struct_type} is not defined")
@@ -974,13 +974,15 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-func main() : void {
-  var b: bool;
-  b = foo() == nil;
+struct s {
+  a:int;
 }
 
-func foo() : void {
-  var a: int;
+func main() : int {
+  var x: s;
+  x = new s;
+  x = nil;
+  print(x.a);
 }
 
 
