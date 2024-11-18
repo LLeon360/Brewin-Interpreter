@@ -628,8 +628,13 @@ class CodeBlock():
                 return self.evaluate_binary_op(expression)
             case e_t if e_t in Interpreter.UNARY_OP_NODES:
                 return self.evaluate_unary_op(expression)
-            case InterpreterBase.FCALL_NODE:
+            case InterpreterBase.FCALL_NODE:                
                 fname = expression.get("name")
+                
+                # check that the function does not return void
+                if self.scope.get_function(fname, len(expression.get("args"))).return_type == "void":
+                    self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected non-void return but got void")
+                
                 value = self.evaluate_fcall(expression)
                 return value
             case InterpreterBase.NEW_NODE:
@@ -969,14 +974,15 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-struct s {
-  a:int;
+func main() : void {
+  var b: bool;
+  b = foo() == nil;
 }
 
-func main() : int {
-  var x: s;
-  x.a = 10; 
+func foo() : void {
+  var a: int;
 }
+
 
     """
     
