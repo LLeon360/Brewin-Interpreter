@@ -781,9 +781,10 @@ class FunctionCall():
         
         # add arguments to scope as variables, map each argument to the corresponding argument node's name
         # with variable arguments such as print, there will be no arg nodes, so it's still possible to access the arguments by index
-        for arg_value, arg_node in zip(args, function.args):
+        for arg_value, arg_node in zip(args, function.args):            
             arg_name = arg_node.get("name")
-            self.scope.declare_variable(arg_name)
+            arg_type = arg_node.get("var_type")
+            self.scope.declare_variable(arg_name, arg_type)
             self.scope.assign_variable(arg_name, arg_value)
         
     def run(self):
