@@ -334,6 +334,9 @@ class VariableScope():
             struct_name = parts[0]
             field_name = ".".join(parts[1:])
             struct = self.get_variable(struct_name)
+            # check that struct is actually a struct
+            if not isinstance(struct, Struct):
+                self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected struct but got {type(struct)}")
             # NIL checks are done in the struct
             struct.assign_variable(field_name, value)
             return
@@ -352,6 +355,9 @@ class VariableScope():
             struct_name = parts[0]
             field_name = ".".join(parts[1:])
             struct = self.get_variable(struct_name)
+            # check that struct is actually a struct
+            if not isinstance(struct, Struct):
+                self.interpreter.error(ErrorType.TYPE_ERROR, f"Invalid type, expected struct but got {type(struct)}")
             # NIL checks are done in the struct
             return struct.get_variable(field_name)
         
@@ -972,30 +978,9 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-struct dog {
-  bark: int;
-  bite: int;
-}
-
-func bar() : int {
-  return;  /* no return value specified - returns 0 */
-}
-
-func bletch() : bool {
-  print("hi");
-  /* no explicit return; bletch must return default bool of false */
-}
-
-func boing() : dog {
-  return;  /* returns nil */
-}
-
 func main() : void {
-   var val: int;
-   val = bar();
-   print(val);  /* prints 0 */
-   print(bletch()); /* prints false */
-   print(boing()); /* prints nil */
+  var a : int;
+  a.b = 5;
 }
     """
     
