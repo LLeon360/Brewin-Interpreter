@@ -147,7 +147,7 @@ class Interpreter(InterpreterBase):
         # for primitives, see if the value is of the correct type
         if var_type in self.primitive_types:
             if type(value) != self.primitive_types[var_type]:
-                self.error(ErrorType.TYPE_ERROR, f"Invalid type, expected {var_type} but got {type(value)}")
+                self.error(ErrorType.TYPE_ERROR, f"Invalid type for, expected primitive {var_type} but got {type(value)}")
         else:
             # allow Interpreter NIL or the value must have a matching structure to the struct type definition
             
@@ -526,8 +526,6 @@ class CodeBlock():
                     value_evaluted = self.evaluate_expression(statement.get("expression"))
                     
                     self.fcall.return_value.assign(value_evaluted)
-                else:
-                    self.fcall.return_value = Interpreter.NIL
                 self.fcall.hit_return = True
                 break
             else:
@@ -974,18 +972,31 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-struct s {
-  a:int;
+struct dog {
+  bark: int;
+  bite: int;
 }
 
-func main() : int {
-  var x: s;
-  x = new s;
-  x = nil;
-  print(x.a);
+func bar() : int {
+  return;  /* no return value specified - returns 0 */
 }
 
+func bletch() : bool {
+  print("hi");
+  /* no explicit return; bletch must return default bool of false */
+}
 
+func boing() : dog {
+  return;  /* returns nil */
+}
+
+func main() : void {
+   var val: int;
+   val = bar();
+   print(val);  /* prints 0 */
+   print(bletch()); /* prints false */
+   print(boing()); /* prints nil */
+}
     """
     
     interpreter = Interpreter()
