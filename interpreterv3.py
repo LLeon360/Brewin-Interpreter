@@ -756,6 +756,16 @@ class FunctionCall():
     '''
     Represents the stack frame for a function call
     '''
+    interpreter: Interpreter
+    name: str
+    args: Optional[List[Element]]
+    function: Function
+    calling_scope: Optional[Scope]
+    scope: Scope
+    hit_return: bool
+    return_type: str
+    return_value: Optional[Variable] # will be None for void functions, and initially
+    
     def __init__(self, interpreter: Interpreter, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
         '''
         interpreter: Interpreter - the interpreter object
