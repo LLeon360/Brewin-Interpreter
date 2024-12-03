@@ -119,6 +119,7 @@ class Variable():
         self.value: Any = value
         self.elem_type: type = type(value)
 
+
 class LazyExpression():
     '''
     Represents an expression that is lazily evaluated
@@ -129,15 +130,43 @@ class LazyExpression():
     
     def __init__(self, scope: 'Scope', expression: Element):      
         # snapshot of the current scope's variables so that modifications to the original scope do not affect the lazy expression
-        variable_snapshot = copy.deepcopy(scope.variables)
-        self.scope = Scope(variables=variable_snapshot, functions=scope.functions)
+        assert(isinstance(scope.variables, VariableScope))
+        variable_snapshot = self.create_variable_snapshot(scope.variables)
+        variable_snapshot_scope = VariableScope()
+        variable_snapshot_scope.variables = variable_snapshot
+        self.scope = Scope(variables=None, functions=scope.functions)
+        self.scope.variables = variable_snapshot_scope
         self.expression = expression
-        
+        self.evaluated_already = False
+        self.value = None
         
     def evaluate(self):
+        if self.evaluated_already:
+            return self.value
+        self.evaluated_already = True
+        
         # create a CodeBlock for the expression
         code_block = CodeBlock(None, None, self.scope)
-        return code_block.evaluate_expression(self.expression)
+        self.value = code_block.evaluate_expression(self.expression)
+        self.value = code_block.get_value(self.value) 
+        return self.value
+    
+    def create_variable_snapshot(self, scope: 'VariableScope') -> Dict[str, Variable]:
+        snapshot = {}
+        
+        # Helper func to recursively collect variables
+        def collect_variables(current_scope: VariableScope):
+            if current_scope.parent:
+                # Recurse to parent first (so we can override with more local definitions)
+                collect_variables(current_scope.parent)
+                
+            # Add/override with current scope's variables
+            for name, var in current_scope.variables.items():
+                snapshot[name] = Variable(var.value)  # Create new Variable with same value
+        
+        collect_variables(scope)
+        return snapshot
+
     
 class Function():
     '''
@@ -365,7 +394,9 @@ class CodeBlock():
         for statement in self.statements:
             if statement.elem_type == InterpreterBase.RETURN_NODE:
                 if statement.get("expression"):
-                    self.fcall.return_value = self.evaluate_expression(statement.get("expression"))
+                    lazy_expression = LazyExpression(self.scope, statement.get("expression"))
+                    
+                    self.fcall.return_value.assign(lazy_expression)
                 else:
                     self.fcall.return_value = Interpreter.NIL
                 self.fcall.hit_return = True
@@ -396,6 +427,7 @@ class CodeBlock():
         
     def evaluate_condition(self, condition: Element):
         value = self.evaluate_expression(condition)
+        value = self.get_value(value)
         self.assert_bool(value)
         return value
     
@@ -454,6 +486,7 @@ class CodeBlock():
             case InterpreterBase.RAISE_NODE:
                 # evaluate the expression type
                 exception_type = self.evaluate_expression(statement.get("exception_type"))
+                exception_type = self.get_value(exception_type)
                 raise BrewinException(exception_type)
             case _:
                 raise Exception(f"Invalid statement {statement.elem_type}")            
@@ -464,8 +497,17 @@ class CodeBlock():
         # get function from scope
         function = self.scope.get_function(func_name, argc)
         
-        # evaluate all arguments into values
-        arg_values = [self.evaluate_expression(arg) for arg in fcall.get("args")]
+        # pass in lazy expressions for args
+        arg_values = []
+        for arg in fcall.get("args"):
+            # if it is a VALUE_NODE, just pass the value, or if it is a VAR_NODE, pass the value of the variable (which may be lazy)
+            if arg.elem_type in Interpreter.VAL_NODES or arg.elem_type == InterpreterBase.VAR_NODE:
+                arg_values.append(self.evaluate_expression(arg))
+            else:
+                # if it is an expression, evaluate it lazily
+                arg_values.append(LazyExpression(self.scope, arg))
+        
+        # arg_values = [LazyExpression(self.scope, arg) for arg in fcall.get("args")]
         
         # execute function
         return function.execute(self.scope, arg_values)
@@ -475,20 +517,11 @@ class CodeBlock():
         match (expression.elem_type):
             # if this is a value node just return value
             case e_t if e_t in Interpreter.VAL_NODES:
-                
-                # if Interpreter.global_interpreter.trace_output:
-                #     print(f"Value node: {expression.get('val')} of type {expression.elem_type}")
                     
                 return expression.get("val")
             # if this is var node try to retrieve from scope
             case InterpreterBase.VAR_NODE:
                 var_val = self.scope.get_variable(expression.get("name"))
-                
-                # If the variable is a lazy expression, evaluate it now, and cache the actual value 
-                if isinstance(var_val, LazyExpression):
-                    # var_val = self.evaluate_expression(var_val.expression)
-                    var_val = var_val.evaluate()
-                    self.scope.assign_variable(expression.get("name"), var_val)
                 
                 return var_val
                 
@@ -503,10 +536,20 @@ class CodeBlock():
             case _:
                 raise Exception(f"Invalid expression {expression.elem_type}")
         
+    def get_value(self, value):
+        '''
+        Try to use a value which may be a lazy expression
+        '''
+        while isinstance(value, LazyExpression):
+            value = value.evaluate()
+        return value
+    
     def evaluate_binary_op(self, binary_op: Element):
-        if binary_op.elem_type not in [Interpreter.AND_NODE, Interpreter.OR_NODE]:
+        if binary_op.elem_type not in [Interpreter.AND_NODE, Interpreter.OR_NODE]:      
             left = self.evaluate_expression(binary_op.get("op1"))
+            left = self.get_value(left)
             right = self.evaluate_expression(binary_op.get("op2"))
+            right = self.get_value(right)
         
         match (binary_op.elem_type):
             # Integer operations
@@ -594,6 +637,7 @@ class CodeBlock():
                 # implement short circuiting
                 # check if left is false
                 left = self.evaluate_expression(binary_op.get("op1"))
+                left = self.get_value(left)
                 self.assert_bool(left)
                 
                 if not left:
@@ -601,6 +645,7 @@ class CodeBlock():
                     
                 # return if right is true
                 right = self.evaluate_expression(binary_op.get("op2"))
+                right = self.get_value(right)
                 self.assert_bool(right)
                 return right
             
@@ -608,12 +653,14 @@ class CodeBlock():
                 # implement short circuiting
                 # check if left is true
                 left = self.evaluate_expression(binary_op.get("op1"))
+                left = self.get_value(left)
                 self.assert_bool(left)
                 if left:
                     return True
                 
                 # return if right is true
                 right = self.evaluate_expression(binary_op.get("op2"))
+                right = self.get_value(right)
                 self.assert_bool(right)
                 return right
             
@@ -623,6 +670,7 @@ class CodeBlock():
     
     def evaluate_unary_op(self, unary_op: Element):
         value = self.evaluate_expression(unary_op.get("op1"))
+        value = self.get_value(value)
         match (unary_op.elem_type):
             case InterpreterBase.NEG_NODE:
                 # check if is an int
@@ -667,12 +715,13 @@ class FunctionCall():
         self.args = args        
         self.function = function
         self.calling_scope = calling_scope
-        self.scope = Scope(variables=Interpreter.global_interpreter.global_scope, functions=calling_scope.functions) 
+        self.scope = Scope(variables=Interpreter.global_interpreter.global_scope.variables, functions=calling_scope.functions) 
 
         # keep track of if a return statement was hit, especially in nested code blocks
         self.hit_return = False
         # track return value, default to NIL
-        self.return_value = Interpreter.NIL
+        self.return_value = Variable()
+        self.return_value.assign(Interpreter.NIL)
         
         # add arguments to scope as variables, map each argument to the corresponding argument node's name
         # with variable arguments such as print, there will be no arg nodes, so it's still possible to access the arguments by index
@@ -682,13 +731,14 @@ class FunctionCall():
             self.scope.assign_variable(arg_name, arg_value)
         
     def run(self):
+        
         # execute list of statement nodes in function node
         
         # create a CodeBlock for the main statement body
         code_block = CodeBlock(self, self.function.statements, self.scope)
         code_block.run()
         
-        return self.return_value
+        return self.return_value.value
         
 class InputIFunctionCall(FunctionCall):
     '''
@@ -745,12 +795,14 @@ class PrintFunctionCall(FunctionCall):
     def run(self):        
         values = self.args
         
-        for i, val in enumerate(values):
+        for i in range(len(values)):
+            while isinstance(values[i], LazyExpression):
+                values[i] = values[i].evaluate()
             # replace bools with strings
-            if type(val) == bool:
-                values[i] = "true" if val else "false"
+            if type(values[i]) == bool:
+                values[i] = "true" if values[i] else "false"
             # replace NIL with "nil"
-            if val == Interpreter.NIL:
+            if values[i] == Interpreter.NIL:
                 values[i] = "nil"
                         
         # print the values
@@ -763,20 +815,21 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-func divide(a, b) {
-  return a / b;
+func bar(x) {
+ print("bar: ", x);
+ return x;
 }
 
 func main() {
-  try {
-    var result;
-    result = divide(10, 0);  /* evaluation deferred due to laziness */
-    print("Result: ", result); /* evaluation occurs here */
-  }
-  catch "div0" {
-    print("Caught division by zero!");
-  }
+ var a;
+ a = bar(0);
+ a = a + bar(1);
+ print("---");
+ print(a);
+ print("---");
+ print(a);
 }
+
     """
     
     interpreter = Interpreter()
