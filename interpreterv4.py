@@ -79,9 +79,12 @@ class Interpreter(InterpreterBase):
         # check that main is defined
         if not self.global_scope.check_function("main", 0):
             super().error(ErrorType.NAME_ERROR, "No main() function was found")
-            
-        # call the main function
-        self.global_scope.functions.functions[("main", 0)].execute(self.global_scope, [])
+        
+        try:
+            # call the main function
+            self.global_scope.functions.functions[("main", 0)].execute(self.global_scope, [])
+        except BrewinException as e:
+            super().error(ErrorType.FAULT_ERROR, f"Unhandled exception: {e.exception_type}")
         
     def setup_global_scope(self, funcs: List[Element]):
         """
@@ -328,6 +331,19 @@ class InputSFunction(Function):
     def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
         return InputSFunctionCall(self.name, self, args, calling_scope).run()
 
+class BrewinException(Exception):
+    '''
+    Custom exception for Brewin
+    
+    Holds Brewin exception type
+    '''
+    
+    def __init__(self, exception_type: str):
+        # throw error if not string
+        if type(exception_type) != str:
+            Interpreter.global_interpreter.error(ErrorType.TYPE_ERROR, f"Invalid exception type {exception_type}")
+        self.exception_type = exception_type
+
 class CodeBlock():
     '''
     Represents a block of code with its own variable scope
@@ -420,7 +436,28 @@ class CodeBlock():
                 
                 for_block = CodeBlock(self.fcall, statement.get("statements"), self.scope)
                 for_block.run_for(init_statement, condition, update_statement)
-                
+            case InterpreterBase.TRY_NODE:
+                try_statements = statement.get("statements")
+                catchers = statement.get("catchers")
+                try:
+                    # run the statements in the try block
+                    code_block = CodeBlock(self.fcall, try_statements, self.scope)
+                    code_block.run()   
+                except BrewinException as e:
+                    exception_type = e.exception_type
+                    # try to find a matching catcher
+                    for catcher in catchers:
+                        if catcher.get("exception_type") == exception_type:
+                            code_block = CodeBlock(self.fcall, catcher.get("statements"), self.scope)
+                            code_block.run()
+                            # don't need to check other catchers, and don't throw
+                            return
+                    # if not caught by any catcher, raise it to the outer scope
+                    raise e
+            case InterpreterBase.RAISE_NODE:
+                # evaluate the expression type
+                exception_type = self.evaluate_expression(statement.get("exception_type"))
+                raise BrewinException(exception_type)
             case _:
                 raise Exception(f"Invalid statement {statement.elem_type}")            
     
