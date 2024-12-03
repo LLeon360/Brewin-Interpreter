@@ -50,7 +50,7 @@ class Interpreter(InterpreterBase):
     VAL_NODES = [InterpreterBase.INT_NODE, InterpreterBase.STRING_NODE, InterpreterBase.BOOL_NODE, InterpreterBase.NIL_NODE]
     
     # add statement node types (variable definition, assignment, function call)
-    STATEMENT_NODES = [InterpreterBase.VAR_DEF_NODE, ASSIGN_NODE, InterpreterBase.FCALL_NODE, InterpreterBase.IF_NODE, InterpreterBase.FOR_NODE, InterpreterBase.RETURN_NODE]
+    STATEMENT_NODES = [InterpreterBase.VAR_DEF_NODE, ASSIGN_NODE, InterpreterBase.FCALL_NODE, InterpreterBase.IF_NODE, InterpreterBase.FOR_NODE, InterpreterBase.RETURN_NODE, InterpreterBase.TRY_NODE, InterpreterBase.RAISE_NODE]
     
     # nil 
     NIL = None
@@ -470,9 +470,9 @@ class CodeBlock():
                 raise Exception(f"Invalid expression {expression.elem_type}")
         
     def evaluate_binary_op(self, binary_op: Element):
-        # strict evaluation, no short-circuiting, left and right are always evaluated
-        left = self.evaluate_expression(binary_op.get("op1"))
-        right = self.evaluate_expression(binary_op.get("op2"))
+        if binary_op.elem_type not in [Interpreter.AND_NODE, Interpreter.OR_NODE]:
+            left = self.evaluate_expression(binary_op.get("op1"))
+            right = self.evaluate_expression(binary_op.get("op2"))
         
         match (binary_op.elem_type):
             # Integer operations
@@ -557,18 +557,31 @@ class CodeBlock():
             
             # logical operators
             case Interpreter.AND_NODE:
-                # check if both are booleans
+                # implement short circuiting
+                # check if left is false
+                left = self.evaluate_expression(binary_op.get("op1"))
                 self.assert_bool(left)
-                self.assert_bool(right)
                 
-                return left and right
+                if not left:
+                    return False
+                    
+                # return if right is true
+                right = self.evaluate_expression(binary_op.get("op2"))
+                self.assert_bool(right)
+                return right
             
             case Interpreter.OR_NODE:
-                # check if both are booleans
+                # implement short circuiting
+                # check if left is true
+                left = self.evaluate_expression(binary_op.get("op1"))
                 self.assert_bool(left)
-                self.assert_bool(right)
+                if left:
+                    return True
                 
-                return left or right
+                # return if right is true
+                right = self.evaluate_expression(binary_op.get("op2"))
+                self.assert_bool(right)
+                return right
             
             case _:
                 # This should never happen, binary op is only called on operators belonging to BINARY_OP_NODES
