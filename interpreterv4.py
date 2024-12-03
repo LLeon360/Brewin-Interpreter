@@ -148,7 +148,6 @@ class LazyExpression():
         # create a CodeBlock for the expression
         code_block = CodeBlock(None, None, self.scope)
         self.value = code_block.evaluate_expression(self.expression)
-        self.value = code_block.get_value(self.value) 
         return self.value
     
     def create_variable_snapshot(self, scope: 'VariableScope') -> Dict[str, Variable]:
@@ -324,7 +323,7 @@ class PrintFunction(Function):
         self.statements = None
         self.args = [] # no named args
     
-    def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
+    def execute(self, calling_scope: Optional[Scope], args: Optional[List[Any]]):
         PrintFunctionCall(self.name, self, args, calling_scope).run()
         
 class InputIFunction(Function):
@@ -339,7 +338,7 @@ class InputIFunction(Function):
         self.statements = None
         self.args = [] # no named args
     
-    def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
+    def execute(self, calling_scope: Optional[Scope], args: Optional[List[Any]]):
         return InputIFunctionCall(self.name, self, args, calling_scope).run()
 
 class InputSFunction(Function):
@@ -354,7 +353,7 @@ class InputSFunction(Function):
         self.statements = None
         self.args = [] # no named args
     
-    def execute(self, calling_scope: Optional[Scope], args: Optional[List[Element]]):
+    def execute(self, calling_scope: Optional[Scope], args: Optional[List[Any]]):
         return InputSFunctionCall(self.name, self, args, calling_scope).run()
 
 class BrewinException(Exception):
@@ -427,7 +426,6 @@ class CodeBlock():
         
     def evaluate_condition(self, condition: Element):
         value = self.evaluate_expression(condition)
-        value = self.get_value(value)
         self.assert_bool(value)
         return value
     
@@ -486,7 +484,6 @@ class CodeBlock():
             case InterpreterBase.RAISE_NODE:
                 # evaluate the expression type
                 exception_type = self.evaluate_expression(statement.get("exception_type"))
-                exception_type = self.get_value(exception_type)
                 raise BrewinException(exception_type)
             case _:
                 raise Exception(f"Invalid statement {statement.elem_type}")            
@@ -501,13 +498,11 @@ class CodeBlock():
         arg_values = []
         for arg in fcall.get("args"):
             # if it is a VALUE_NODE, just pass the value, or if it is a VAR_NODE, pass the value of the variable (which may be lazy)
-            if arg.elem_type in Interpreter.VAL_NODES or arg.elem_type == InterpreterBase.VAR_NODE:
+            if arg.elem_type in Interpreter.VAL_NODES:
                 arg_values.append(self.evaluate_expression(arg))
             else:
                 # if it is an expression, evaluate it lazily
                 arg_values.append(LazyExpression(self.scope, arg))
-        
-        # arg_values = [LazyExpression(self.scope, arg) for arg in fcall.get("args")]
         
         # execute function
         return function.execute(self.scope, arg_values)
@@ -522,7 +517,8 @@ class CodeBlock():
             # if this is var node try to retrieve from scope
             case InterpreterBase.VAR_NODE:
                 var_val = self.scope.get_variable(expression.get("name"))
-                
+                if isinstance(var_val, LazyExpression):
+                    var_val = var_val.evaluate()
                 return var_val
                 
             case e_t if e_t in Interpreter.BINARY_OP_NODES:
@@ -532,6 +528,8 @@ class CodeBlock():
             case InterpreterBase.FCALL_NODE:
                 fname = expression.get("name")
                 value = self.evaluate_fcall(expression)
+                # expand the lazy expression
+                value = self.get_value(value)
                 return value
             case _:
                 raise Exception(f"Invalid expression {expression.elem_type}")
@@ -547,10 +545,8 @@ class CodeBlock():
     def evaluate_binary_op(self, binary_op: Element):
         if binary_op.elem_type not in [Interpreter.AND_NODE, Interpreter.OR_NODE]:      
             left = self.evaluate_expression(binary_op.get("op1"))
-            left = self.get_value(left)
             right = self.evaluate_expression(binary_op.get("op2"))
-            right = self.get_value(right)
-        
+            
         match (binary_op.elem_type):
             # Integer operations
             case Interpreter.ADD_NODE:
@@ -637,7 +633,6 @@ class CodeBlock():
                 # implement short circuiting
                 # check if left is false
                 left = self.evaluate_expression(binary_op.get("op1"))
-                left = self.get_value(left)
                 self.assert_bool(left)
                 
                 if not left:
@@ -645,7 +640,6 @@ class CodeBlock():
                     
                 # return if right is true
                 right = self.evaluate_expression(binary_op.get("op2"))
-                right = self.get_value(right)
                 self.assert_bool(right)
                 return right
             
@@ -653,14 +647,12 @@ class CodeBlock():
                 # implement short circuiting
                 # check if left is true
                 left = self.evaluate_expression(binary_op.get("op1"))
-                left = self.get_value(left)
                 self.assert_bool(left)
                 if left:
                     return True
                 
                 # return if right is true
                 right = self.evaluate_expression(binary_op.get("op2"))
-                right = self.get_value(right)
                 self.assert_bool(right)
                 return right
             
@@ -670,7 +662,6 @@ class CodeBlock():
     
     def evaluate_unary_op(self, unary_op: Element):
         value = self.evaluate_expression(unary_op.get("op1"))
-        value = self.get_value(value)
         match (unary_op.elem_type):
             case InterpreterBase.NEG_NODE:
                 # check if is an int
@@ -703,7 +694,7 @@ class FunctionCall():
     '''
     Represents the stack frame for a function call
     '''
-    def __init__(self, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
+    def __init__(self, name: str, function: Function, args: Optional[List[Any]], calling_scope: Optional[Scope]):
         '''
         name: str - name of the function
         function: Element - the actual Function node to call
@@ -744,7 +735,7 @@ class InputIFunctionCall(FunctionCall):
     '''
     Represents a function call to the built-in input function
     '''
-    def __init__(self, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
+    def __init__(self, name: str, function: Function, args: Optional[List[Any]], calling_scope: Optional[Scope]):
         super().__init__(name, function, args, calling_scope)
         
     def run(self):
@@ -769,7 +760,7 @@ class InputSFunctionCall(FunctionCall):
     '''
     Represents a function call to the built-in input function
     '''
-    def __init__(self, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
+    def __init__(self, name: str, function: Function, args: Optional[List[Any]], calling_scope: Optional[Scope]):
         super().__init__(name, function, args, calling_scope)
         
     def run(self):
@@ -789,7 +780,7 @@ class PrintFunctionCall(FunctionCall):
     '''
     Represents a function call to the built-in print function
     '''
-    def __init__(self, name: str, function: Function, args: Optional[List[Element]], calling_scope: Optional[Scope]):
+    def __init__(self, name: str, function: Function, args: Optional[List[Any]], calling_scope: Optional[Scope]):
         super().__init__(name, function, args, calling_scope)
         
     def run(self):        
@@ -815,21 +806,28 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-func bar(x) {
- print("bar: ", x);
- return x;
+func foo(y, z) {
+  print("Hello");
+  print("hello to ", y);
+  print("hello to also ", z);
+}
+
+func set_y(x) {
+  print("setting y");
+  return x;
 }
 
 func main() {
- var a;
- a = bar(0);
- a = a + bar(1);
- print("---");
- print(a);
- print("---");
- print(a);
+  var y;
+  var z;
+  y = 5;
+  y = set_y(y);
+  y = set_y(y);
+  y = set_y(y);
+  y = set_y(y);
+  z = y;
+  print(y+z+z+z-y);
 }
-
     """
     
     interpreter = Interpreter()
