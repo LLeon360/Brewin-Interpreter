@@ -111,9 +111,7 @@ class Variable():
     '''
     value: Any
     
-    def __init__(self, value: Any=None):
-        # TODO Remove
-        
+    def __init__(self, value: Any=None):        
         self.value: Any = value
         self.elem_type: type = type(value)
         
@@ -130,7 +128,6 @@ class LazyExpression():
     '''
     
     def __init__(self, scope: 'Scope', expression: Element):      
-        # TODO Remove 
         # snapshot of the current scope's variables so that modifications to the original scope do not affect the lazy expression
         variable_snapshot = copy.deepcopy(scope.variables)
         self.scope = Scope(variables=variable_snapshot, functions=scope.functions)
@@ -544,8 +541,8 @@ class CodeBlock():
                 
                 # Catch divide by zero
                 if right == 0:
-                    # Note, this isn't defined in the spec, so will throw as a type error, but TODO this doesn't fit exactly
-                    Interpreter.global_interpreter.error(ErrorType.TYPE_ERROR, "Division by zero encountered: {left} / {right}")
+                    # raise a Brewin Exception for div0
+                    raise BrewinException("div0")
                 
                 # DO INTEGER DIVISION
                 return left // right
@@ -767,21 +764,19 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-func bar(x) {
- print("bar: ", x);
- return x;
+func divide(a, b) {
+  return a / b;
 }
 
 func main() {
- var a;
- a = bar(0);
- a = a + bar(1);
- a = a + bar(2);
- a = a + bar(3);
- print("---");
- print(a);
- print("---");
- print(a);
+  try {
+    var result;
+    result = divide(10, 0);  /* evaluation deferred due to laziness */
+    print("Result: ", result); /* evaluation occurs here */
+  }
+  catch "div0" {
+    print("Caught division by zero!");
+  }
 }
     """
     
