@@ -4,8 +4,6 @@ from element import Element
 
 from typing import Optional, List, Dict, Any, Tuple
 
-import copy
-
 class Interpreter(InterpreterBase):
     """
     The main interpreter class that will run the AST
