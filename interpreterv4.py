@@ -662,7 +662,6 @@ class FunctionCall():
         args: Optional[List[Any]] - the arguments to pass to the function
         calling_scope: Optional[Scope] - the scope that called this function
         '''
-        # TODO Remove
         
         self.name = name
         self.args = args        
