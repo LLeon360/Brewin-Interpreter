@@ -744,6 +744,9 @@ class InputIFunctionCall(FunctionCall):
         # if there is an argument, print it
         if self.args:
             prompt = self.args[0]
+            prompt = self.args[0]
+            while isinstance(prompt, LazyExpression):
+                prompt = prompt.evaluate()
             Interpreter.global_interpreter.output(prompt)
         
         input_value = Interpreter.global_interpreter.get_input()
@@ -769,6 +772,9 @@ class InputSFunctionCall(FunctionCall):
         # if there is an argument, print it
         if self.args:
             prompt = self.args[0]
+            while isinstance(prompt, LazyExpression):
+                prompt = prompt.evaluate()
+            # replace bools with strings
             Interpreter.global_interpreter.output(prompt)
         
         input_value = Interpreter.global_interpreter.get_input()
@@ -804,28 +810,21 @@ class PrintFunctionCall(FunctionCall):
 # ===================================== MAIN Testing =====================================
 def main():
     program_source = """
-func foo(y, z) {
-  print("Hello");
-  print("hello to ", y);
-  print("hello to also ", z);
-}
-
-func set_y(x) {
-  print("setting y");
-  return x;
+func bar(x) {
+ print("bar: ", x);
+ return x;
 }
 
 func main() {
-  var y;
-  var z;
-  y = 5;
-  y = set_y(y);
-  y = set_y(y);
-  y = set_y(y);
-  y = set_y(y);
-  z = y;
-  print(y+z+z+z-y);
+ var a;
+ a = bar("5");
+ print("---");
+ var b;
+ b = inputi(a);
+ print("---");
+ print(b);
 }
+
     """
     
     interpreter = Interpreter()
