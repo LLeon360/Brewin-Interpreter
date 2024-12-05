@@ -196,7 +196,6 @@ class FunctionScope():
     '''
     Represents a scope for functions
     '''
-    interpreter: 'Interpreter'
     functions: Dict[Tuple[str, int], Function]  # Functions are uniquely identified by name and number of arguments
     parent: Optional['FunctionScope']
     
@@ -238,7 +237,6 @@ class VariableScope():
     '''
     Represents a scope for variables
     '''
-    interpreter: 'Interpreter'
     variables: Dict[str, Variable]
     parent: Optional['VariableScope']
     
@@ -362,6 +360,7 @@ class BrewinException(Exception):
     '''
     
     def __init__(self, exception_type: str):
+        super().__init__()
         # throw error if not string
         if type(exception_type) != str:
             Interpreter.global_interpreter.error(ErrorType.TYPE_ERROR, f"Invalid exception type {exception_type}")
