@@ -1,41 +1,34 @@
-# Brewin InterpreterV1
+# Brewin Interpreter
 
-General:
-This interpreter was written to interpret the main() function of a simple Brewin program and supports variables, rudementary function calling, statements, and expressions.
+This is an interpreter for the language Brewin made for the class CS 131 at UCLA in the Fall 2024 Quarter taught by Carey Nachenberg!
 
-The interpreter is written modularly with future expansion in mind so there is a skeleton of support for features like scoping, other function defintions (besides main), argument passing, etc.
+The parser and lexer are provided by the course organizers and can be found here [Brewin Interpreter Starter](https://github.com/UCLA-CS-131/fall-24-project-starter).
 
-There are situations in which the interpreter will raise Exceptions not through the `intbase.py` error() function because those Exceptions would not be semantic errors but instead something gone wrong within the interpreter's control flow, ex. calling the evaluate_expression on an Element that does not fit into any possible expression category and thus falls through all pattern matching. This should never happen because evaluate_expression is only called when an expression should be there either syntactically (in which case the parser should catch it) or because the program already checked that it was an expression. 
+## Variations / Versions
 
-# CS 131 Fall 2024: Project Starter README
+The various specs are linked here:
+- [v4](https://docs.google.com/document/d/1vUSQwrq8ePh-pmc2hia8GmapXXOSEEpu7xw2tgTbgII/edit?tab=t.0#heading=h.63zoibjlqvny)
+- [v3](https://docs.google.com/document/d/1seLyYfAJs9xj_XgE8mB23KHuAGQOCnfYmRAwW4P8u1k/edit?tab=t.0#heading=h.3e9u78ortlte)
+- [v2](https://docs.google.com/document/d/1M4e3mkNhUKC0d7dJZSetbR4M3ceq8y8BiGDJ4fMAK6I/edit?tab=t.0#heading=h.63zoibjlqvny)
+- [v1](https://docs.google.com/document/d/1npomXM55cXg9Af7BUXEj3_bFpj1sy2Jty2Nwi6Kp64E/edit?tab=t.0#heading=h.63zoibjlqvny)
 
-Hey there! This is a template repository that contains the necessary boilerplate for [CS 131](https://ucla-cs-131.github.io/fall-24-website/)'s quarter-long project: making an interpreter. The project specs are as follows:
+## TLDR:
 
-1. [Project 1 Spec](https://docs.google.com/document/d/1npomXM55cXg9Af7BUXEj3_bFpj1sy2Jty2Nwi6Kp64E/edit?usp=sharing)
+Essentially,
+**v1** supports basic code execution in the main function with dynamically typed variables and no conditionals. There are simple built-in functions like inputi for inputing numbers and printing as well as a few operators.
 
-There are four stages to the project; students are currently at the first. Thus, this folder contains the necessary bootstrapping code:
+**v2** supports function definitions and control flow which includes if statements and for statements as well as returns. This brings about proper scoping within functions and code blocks as well as implementing requisite mechanisms for argument passing and managing scopes. 
 
-- `ply/lex.py`, `ply/yacc.py`, `brewlex.py`, `brewparse.py`, responsible for taking in a string representing a Brewin program and outputting an AST (parser logic)
-- `elements.py`, defines the return type of the parser
-- `intbase.py`, the base class and enum definitions for the interpreter
+**v3** is for Brewin++, a departure from the dynamically-typed versions that come previous as it enforces static typing of variables, arguments, and return types. Additionally, there are user-defined types in the form of structs which use pass-by-reference semantics. Additionally there are coercions for integers and booleans. There are void functions and seperately NIL values for structs and different handling for equality between structs of different types and NIL values. 
 
-Some notes on your submission (for Project 1)
+**v4** is for Brewin#, another spin-off of Brewin which supports need semantics and lazy evaluation as found in languages like Haskell. This means that expressions are not evaluated until they are necessarily used and then cached for further use. This requires mechanisms for snapshotting the environment and passing storing references to the cached versions of inner expressions in nested expressions. Another major feature is exception handling with the inclusion of try-catch handling of exceptions. Short-circuiting is also implemented to avoid unnecessary evaluations in AND and OR expressions.  
 
-1. You **must have a top-level, versioned `interpreterv1.py` file** that **exports the `Interpreter` class**. If not, **your code will not run on our autograder**.
-2. You may also submit one or more additional `.py` modules that your interpreter uses, if you decide to break up your solution into multiple `.py` files.
-3. You **should not modify/submit** ***any*** of the source files that are present in this base template, which includes:
-* `ply/lex.py`
-* `ply/yacc.py`
-* `brewlex.py`
-* `brewparse.py`
-* `element.py`
-* `intbase.py`
+## Get Started
 
-You can find out more about our autograder, including how to run it, in [the accompanying repo](https://github.com/UCLA-CS-131/fall-24-autograder)
+Each version of the interpreter can be found within the corresponding interpretervN.py file and can be run with the provided main function below it to execute a given Brewin program.
 
-## Licensing and Attribution
+A provided autograder can be found [here](https://github.com/UCLA-CS-131/fall-24-autograder) which acts as a harness to execute a collection of tests for each version of the interpreter. The test cases can be viewed in plaintext alongside their intended outputs.
 
-This is an unlicensed repository; even though the source code is public, it is **not** governed by an open-source license.
+## Final Notes
 
-This code was primarily written by [Carey Nachenberg](http://careynachenberg.weebly.com/), with support from his TAs for the [Fall 2024 iteration of CS 131](https://ucla-cs-131.github.io/fall-24-website/).
-
+Again, credits for the interpreter base and parser and lexer as well as the autograder goes to course organizers!
